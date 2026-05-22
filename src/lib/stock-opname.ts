@@ -44,6 +44,25 @@ function sessionStockTabName(sessionId: string): string {
   return sanitizeSheetTitle(`${sheetConfig.opnamePrefix}${sessionId}`);
 }
 
+async function readLocationMap(): Promise<Map<string, string>> {
+  assertSheetConfig();
+  const response = await getSheets().spreadsheets.values.get({
+    spreadsheetId: sheetConfig.spreadsheetId,
+    range: tabRange(sheetConfig.locationMap, "A:B"),
+  });
+  const rows = response.data.values ?? [];
+  if (rows.length <= 1) return new Map();
+
+  const mappings = new Map<string, string>();
+  for (let i = 1; i < rows.length; i += 1) {
+    const sourceLocation = cell(rows[i], 0);
+    const gudang = cell(rows[i], 1);
+    if (!sourceLocation || !gudang) continue;
+    mappings.set(sourceLocation.toLowerCase(), gudang);
+  }
+  return mappings;
+}
+
 async function getSheetIdIfExists(tab: string): Promise<number | null> {
   assertSheetConfig();
   const meta = await getSheets().spreadsheets.get({
@@ -78,14 +97,16 @@ async function ensureSessionSheet(tab: string): Promise<void> {
 function aggregateCountedByGudangSku(
   counts: CountEntry[],
   sessionId: string,
+  locationMap: Map<string, string>,
 ): Map<string, number> {
   const grouped = new Map<string, number>();
   for (const row of counts) {
     if (row.sessionId !== sessionId) continue;
     const sku = row.sku.trim();
-    const gudang = row.location.trim() || "UNMAPPED";
+    const mappedGudang = locationMap.get(row.location.trim().toLowerCase());
     if (!sku) continue;
-    const key = `${gudang}|||${sku}`;
+    if (!mappedGudang) continue;
+    const key = `${mappedGudang}|||${sku}`;
     grouped.set(key, (grouped.get(key) ?? 0) + row.quantity);
   }
   return grouped;
@@ -122,10 +143,7 @@ function buildStockRows(
   expectedByGudangSku: Map<string, number>,
   countedByGudangSku: Map<string, number>,
 ): SessionStockRow[] {
-  const allKeys = new Set<string>([
-    ...expectedByGudangSku.keys(),
-    ...countedByGudangSku.keys(),
-  ]);
+  const allKeys = new Set<string>([...expectedByGudangSku.keys()]);
   const now = new Date().toISOString();
   return [...allKeys]
     .sort((a, b) => a.localeCompare(b))
@@ -192,7 +210,12 @@ export async function upsertSessionStockSheet(
 ): Promise<{ sheetTitle: string; rowsWritten: number }> {
   const tab = sessionStockTabName(sessionId);
   await ensureSessionSheet(tab);
-  const countedByGudangSku = aggregateCountedByGudangSku(allCounts, sessionId);
+  const locationMap = await readLocationMap();
+  const countedByGudangSku = aggregateCountedByGudangSku(
+    allCounts,
+    sessionId,
+    locationMap,
+  );
   const rows = buildStockRows(expectedByGudangSku, countedByGudangSku);
   await writeStockRows(tab, rows);
   return { sheetTitle: tab, rowsWritten: rows.length };
@@ -210,7 +233,12 @@ export async function refreshSessionStockFromCounts(
   const expectedByGudangSku = new Map(
     existingRows.map((r) => [`${r.gudang}|||${r.sku}`, r.expectedQty]),
   );
-  const countedByGudangSku = aggregateCountedByGudangSku(allCounts, sessionId);
+  const locationMap = await readLocationMap();
+  const countedByGudangSku = aggregateCountedByGudangSku(
+    allCounts,
+    sessionId,
+    locationMap,
+  );
   const rows = buildStockRows(expectedByGudangSku, countedByGudangSku);
   await writeStockRows(tab, rows);
 }

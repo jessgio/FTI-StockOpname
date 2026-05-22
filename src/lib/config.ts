@@ -6,6 +6,7 @@ export const sheetConfig = {
   skus: process.env.SHEET_SKUS ?? "SKUs",
   counts: process.env.SHEET_COUNTS ?? "Counts",
   opnamePrefix: process.env.SHEET_OPNAME_PREFIX ?? "SO_",
+  locationMap: process.env.SHEET_LOCATION_MAP ?? "LocationMap",
 } as const;
 
 /** 1-based column letters → index helpers are in sheets.ts */

@@ -76,6 +76,18 @@ Generated from Admin import (`/admin/opname`) using the uploaded Excel file:
 
 This sheet is refreshed automatically every time a count is added, edited, or deleted.
 
+### Location map sheet (`LocationMap`)
+
+Used to map scanned count locations to target warehouse (`gudang`) names:
+
+| location | gudang |
+|----------|--------|
+| B-13-INV | Gudang Finished Goods |
+| A-01-RM | Gudang Raw Material |
+
+- Counts are aggregated into the session stock sheet only when a `location` has a mapping.
+- Unmapped count locations are ignored (no new baseline rows are created).
+
 ## Google Cloud setup
 
 1. Create a service account and download the JSON key.
