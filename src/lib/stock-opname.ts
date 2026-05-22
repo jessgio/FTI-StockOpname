@@ -126,6 +126,8 @@ async function readSessionStockRows(tab: string): Promise<SessionStockRow[]> {
   });
   const rows = response.data.values ?? [];
   if (rows.length <= 1) return [];
+  const headers = rows[0].map((value) => value.trim().toLowerCase());
+  const hasVarianceColumn = headers[5] === "variance_pct";
 
   const parsed: SessionStockRow[] = [];
   for (let i = 1; i < rows.length; i += 1) {
@@ -139,8 +141,10 @@ async function readSessionStockRows(tab: string): Promise<SessionStockRow[]> {
       expectedQty: toNumber(cell(row, 2)),
       countedQty: toNumber(cell(row, 3)),
       gapQty: toNumber(cell(row, 4)),
-      variancePct: toNumber(cell(row, 5)),
-      lastUpdated: cell(row, 6),
+      variancePct: hasVarianceColumn
+        ? toNumber(cell(row, 5))
+        : calculateVariancePct(toNumber(cell(row, 2)), toNumber(cell(row, 4))),
+      lastUpdated: hasVarianceColumn ? cell(row, 6) : cell(row, 5),
     });
   }
   return parsed;
@@ -192,6 +196,21 @@ async function writeStockRows(tab: string, rows: SessionStockRow[]): Promise<voi
   });
 }
 
+async function normalizeSessionStockSheetSchema(tab: string): Promise<void> {
+  assertSheetConfig();
+  const headerRes = await getSheets().spreadsheets.values.get({
+    spreadsheetId: sheetConfig.spreadsheetId,
+    range: tabRange(tab, "A1:G1"),
+  });
+  const header = (headerRes.data.values?.[0] ?? []).map((v) =>
+    v.trim().toLowerCase(),
+  );
+  if (header[5] === "variance_pct") return;
+
+  const rows = await readSessionStockRows(tab);
+  await writeStockRows(tab, rows);
+}
+
 export function parseExpectedRowsFromExcel(
   rows: Array<Record<string, unknown>>,
 ): Map<string, number> {
@@ -238,6 +257,7 @@ export async function refreshSessionStockFromCounts(
   const tab = sessionStockTabName(sessionId);
   const sheetId = await getSheetIdIfExists(tab);
   if (sheetId === null) return;
+  await normalizeSessionStockSheetSchema(tab);
 
   const existingRows = await readSessionStockRows(tab);
   const expectedByGudangSku = new Map(
@@ -285,6 +305,7 @@ export async function getSessionStockGap(
       totalGapQty: 0,
     };
   }
+  await normalizeSessionStockSheetSchema(tab);
 
   const rows = await readSessionStockRows(tab);
   const expectedRows = rows.filter((r) => r.expectedQty > 0);
