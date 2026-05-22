@@ -3,17 +3,33 @@
 import { useCallback, useEffect, useState } from "react";
 import {
   AppShell,
+  Button,
   Card,
   ErrorBanner,
   NavLink,
   ProgressBar,
   StatTile,
 } from "@/components/ui";
-import type { BootstrapData, DashboardMetrics } from "@/lib/types";
+import { apiFetch } from "@/lib/count-api";
+import {
+  clearSessionAuth,
+  isSessionUnlocked,
+  loadSessionAuth,
+  saveSessionAuth,
+} from "@/lib/session-store";
+import type { BootstrapData, DashboardMetrics, StockSession } from "@/lib/types";
+
+type Step = "session" | "pin" | "metrics";
 
 export default function DashboardPage() {
   const [bootstrap, setBootstrap] = useState<BootstrapData | null>(null);
+  const [step, setStep] = useState<Step>("session");
+  const [selectedSession, setSelectedSession] = useState<StockSession | null>(
+    null,
+  );
   const [sessionId, setSessionId] = useState("");
+  const [pinInput, setPinInput] = useState("");
+  const [verifyingPin, setVerifyingPin] = useState(false);
   const [metrics, setMetrics] = useState<DashboardMetrics | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -24,20 +40,30 @@ export default function DashboardPage() {
     if (!res.ok) throw new Error(data.error ?? "Failed to load sessions");
     const parsed = data as BootstrapData;
     setBootstrap(parsed);
-    const firstOpen = parsed.sessions.find((s) => s.status !== "closed");
-    if (firstOpen && !sessionId) setSessionId(firstOpen.id);
     return parsed;
-  }, [sessionId]);
+  }, []);
 
   const loadMetrics = useCallback(async (id: string) => {
     if (!id) return;
+    if (!isSessionUnlocked(id)) {
+      setStep("pin");
+      return;
+    }
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`/api/dashboard?sessionId=${encodeURIComponent(id)}`);
+      const res = await apiFetch(
+        `/api/dashboard?sessionId=${encodeURIComponent(id)}`,
+      );
       const data = await res.json();
+      if (res.status === 401) {
+        clearSessionAuth();
+        setStep("pin");
+        throw new Error(data.error ?? "Session PIN required");
+      }
       if (!res.ok) throw new Error(data.error ?? "Failed to load metrics");
       setMetrics(data as DashboardMetrics);
+      setStep("metrics");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load metrics");
     } finally {
@@ -48,55 +74,191 @@ export default function DashboardPage() {
   useEffect(() => {
     void (async () => {
       try {
-        await loadBootstrap();
+        const parsed = await loadBootstrap();
+        const auth = loadSessionAuth();
+        if (auth?.sessionId) {
+          setSessionId(auth.sessionId);
+          const session = parsed.sessions.find((s) => s.id === auth.sessionId);
+          if (session) setSelectedSession(session);
+          if (isSessionUnlocked(auth.sessionId)) {
+            await loadMetrics(auth.sessionId);
+          } else {
+            setStep("pin");
+            setLoading(false);
+          }
+        } else {
+          setLoading(false);
+        }
       } catch (err) {
         setError(err instanceof Error ? err.message : "Failed to load");
         setLoading(false);
       }
     })();
-  }, [loadBootstrap]);
+  }, [loadBootstrap, loadMetrics]);
 
-  useEffect(() => {
-    if (sessionId) void loadMetrics(sessionId);
-  }, [sessionId, loadMetrics]);
+  async function unlockSession(session: StockSession, pin: string) {
+    setVerifyingPin(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/session/verify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sessionId: session.id, pin }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "PIN verification failed");
+      saveSessionAuth({ sessionId: session.id, token: data.token });
+      setSessionId(session.id);
+      setSelectedSession(session);
+      setPinInput("");
+      await loadMetrics(session.id);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "PIN verification failed");
+    } finally {
+      setVerifyingPin(false);
+    }
+  }
+
+  function pickSession(session: StockSession) {
+    setSelectedSession(session);
+    setSessionId(session.id);
+    clearSessionAuth();
+    setMetrics(null);
+    setError(null);
+    if (session.pinRequired) {
+      setStep("pin");
+    } else {
+      void unlockSession(session, "");
+    }
+  }
+
+  function confirmPin() {
+    if (!selectedSession) return;
+    if (!pinInput.trim()) {
+      setError("Enter the session PIN.");
+      return;
+    }
+    void unlockSession(selectedSession, pinInput);
+  }
+
+  function lockDashboard() {
+    clearSessionAuth();
+    setMetrics(null);
+    setStep(selectedSession?.pinRequired ? "pin" : "session");
+    setPinInput("");
+  }
 
   const sessions = bootstrap?.sessions ?? [];
 
   return (
-    <AppShell title="Dashboard" subtitle="Live progress from your count sheet">
+    <AppShell
+      title="Dashboard"
+      subtitle={
+        selectedSession
+          ? selectedSession.name
+          : "Unlock a session to view progress"
+      }
+    >
       <div className="flex gap-2">
         <NavLink href="/">Home</NavLink>
         <NavLink href="/count">Count</NavLink>
       </div>
 
-      <Card>
-        <label className="mb-2 block text-sm font-medium text-stone-800">
-          Session
-        </label>
-        <select
-          className="w-full rounded-xl border border-stone-300 px-3 py-3 text-base"
-          value={sessionId}
-          onChange={(e) => setSessionId(e.target.value)}
-        >
-          <option value="">Select session</option>
-          {sessions.map((s) => (
-            <option key={s.id} value={s.id}>
-              {s.name} ({s.status})
-            </option>
-          ))}
-        </select>
-      </Card>
-
       {error ? <ErrorBanner message={error} /> : null}
 
-      {loading ? (
+      {step === "session" ? (
+        <Card>
+          <h2 className="mb-3 text-lg font-medium">Choose session</h2>
+          <ul className="space-y-2">
+            {sessions.map((session) => (
+              <li key={session.id}>
+                <Button type="button" onClick={() => pickSession(session)}>
+                  {session.name}
+                  <span className="ml-2 text-sm opacity-80">
+                    ({session.status}
+                    {session.pinRequired ? " · PIN" : ""})
+                  </span>
+                </Button>
+              </li>
+            ))}
+          </ul>
+        </Card>
+      ) : null}
+
+      {step === "pin" && selectedSession ? (
+        <Card className="space-y-4">
+          <p className="text-sm text-stone-600">
+            Enter the session PIN for <strong>{selectedSession.name}</strong>{" "}
+            (same PIN used for counting).
+          </p>
+          <label className="block text-sm font-medium text-stone-800">
+            Session PIN
+          </label>
+          <input
+            type="password"
+            inputMode="numeric"
+            autoComplete="off"
+            className="w-full rounded-xl border border-stone-300 px-4 py-3 text-2xl tracking-widest outline-none ring-teal-600 focus:ring-2"
+            value={pinInput}
+            autoFocus
+            onChange={(e) => setPinInput(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") confirmPin();
+            }}
+          />
+          <Button
+            type="button"
+            disabled={verifyingPin}
+            onClick={() => confirmPin()}
+          >
+            {verifyingPin ? "Checking…" : "Unlock dashboard"}
+          </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            onClick={() => {
+              setSelectedSession(null);
+              setSessionId("");
+              setStep("session");
+              clearSessionAuth();
+            }}
+          >
+            Back to sessions
+          </Button>
+        </Card>
+      ) : null}
+
+      {step === "metrics" && loading ? (
         <Card>
           <p className="text-stone-600">Loading metrics…</p>
         </Card>
-      ) : metrics ? (
+      ) : null}
+
+      {step === "metrics" && metrics ? (
         <>
+          <Card className="flex flex-wrap items-center justify-between gap-2">
+            <p className="text-sm text-stone-600">
+              Viewing <strong>{metrics.sessionName}</strong>
+            </p>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                className="text-sm font-medium text-teal-800"
+                onClick={() => void loadMetrics(sessionId)}
+              >
+                Refresh
+              </button>
+              <button
+                type="button"
+                className="text-sm font-medium text-stone-600"
+                onClick={lockDashboard}
+              >
+                Lock
+              </button>
+            </div>
+          </Card>
+
           <Card className="space-y-4">
-            <h2 className="text-lg font-medium">{metrics.sessionName}</h2>
             <ProgressBar
               label="Locations scanned"
               current={metrics.locationsScanned}
@@ -168,12 +330,13 @@ export default function DashboardPage() {
               <p className="text-sm text-stone-600">Waiting for first entry…</p>
             ) : (
               <ul className="space-y-2 text-sm">
-                {metrics.recentCounts.map((row, i) => (
+                {metrics.recentCounts.map((row) => (
                   <li
-                    key={`${row.timestamp}-${i}`}
+                    key={row.countId || `${row.timestamp}-${row.rowIndex}`}
                     className="rounded-lg bg-stone-50 px-3 py-2"
                   >
-                    <span className="font-medium">{row.sku}</span> × {row.quantity}{" "}
+                    <span className="font-medium">{row.sku}</span> ×{" "}
+                    {row.quantity}{" "}
                     <span className="text-stone-600">
                       @ {row.location} · {row.counter}
                     </span>
@@ -182,14 +345,6 @@ export default function DashboardPage() {
               </ul>
             )}
           </Card>
-
-          <button
-            type="button"
-            className="text-sm font-medium text-teal-800"
-            onClick={() => void loadMetrics(sessionId)}
-          >
-            Refresh metrics
-          </button>
         </>
       ) : null}
     </AppShell>

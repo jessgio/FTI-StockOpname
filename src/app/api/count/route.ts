@@ -1,10 +1,12 @@
 import { NextResponse } from "next/server";
+import { findDuplicateCount } from "@/lib/duplicate-count";
 import {
   appendCount,
-  deleteCountRow,
+  deleteCountById,
   fetchBootstrap,
-  getCountByRow,
-  updateCountRow,
+  getCountById,
+  readCounts,
+  updateCountById,
 } from "@/lib/sheets";
 import { requireSessionToken } from "@/lib/require-session-token";
 import { assertCounterOwnsRow, validateCountInput } from "@/lib/validate-count";
@@ -45,20 +47,47 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Invalid quantity" }, { status: 400 });
     }
 
-    const bootstrap = await fetchBootstrap();
+    const qty = Number(quantity);
+    if (qty < 0) {
+      return NextResponse.json(
+        { error: "Quantity must be zero or positive" },
+        { status: 400 },
+      );
+    }
+
+    const [bootstrap, counts] = await Promise.all([
+      fetchBootstrap(),
+      readCounts(),
+    ]);
     const resolved = await validateCountInput(bootstrap, {
       counterName,
       locationName,
       skuCode,
-      quantity: Number(quantity),
+      quantity: qty,
     });
+
+    const duplicate = findDuplicateCount(
+      counts,
+      sessionId,
+      resolved.counter.name,
+      resolved.location.name,
+      resolved.sku.sku,
+    );
+    if (duplicate) {
+      return NextResponse.json(
+        {
+          error: `You already counted ${resolved.sku.sku} at ${resolved.location.name} (qty ${duplicate.quantity}). Edit that line or ask another counter to double-check.`,
+        },
+        { status: 409 },
+      );
+    }
 
     const entry = await appendCount({
       sessionId,
       counter: resolved.counter.name,
       location: resolved.location.name,
       sku: resolved.sku.sku,
-      quantity: resolved.quantity,
+      quantity: qty,
       deviceId: deviceId ?? "unknown",
     });
 
@@ -82,7 +111,7 @@ export async function POST(request: Request) {
 export async function PATCH(request: Request) {
   try {
     const body = (await request.json()) as {
-      rowIndex?: number;
+      countId?: string;
       sessionId?: string;
       counterName?: string;
       locationName?: string;
@@ -92,7 +121,7 @@ export async function PATCH(request: Request) {
     };
 
     const {
-      rowIndex,
+      countId,
       sessionId,
       counterName,
       locationName,
@@ -102,7 +131,7 @@ export async function PATCH(request: Request) {
     } = body;
 
     if (
-      !rowIndex ||
+      !countId ||
       !sessionId ||
       !counterName ||
       !locationName ||
@@ -118,26 +147,54 @@ export async function PATCH(request: Request) {
     const authError = requireSessionToken(request, sessionId);
     if (authError) return authError;
 
-    const existing = await getCountByRow(rowIndex);
+    const existing = await getCountById(countId);
     if (!existing) {
       return NextResponse.json({ error: "Count not found" }, { status: 404 });
     }
     assertCounterOwnsRow(existing, counterName, sessionId);
 
-    const bootstrap = await fetchBootstrap();
+    const qty = Number(quantity);
+    if (Number.isNaN(qty) || qty < 0) {
+      return NextResponse.json(
+        { error: "Quantity must be zero or positive" },
+        { status: 400 },
+      );
+    }
+
+    const [bootstrap, counts] = await Promise.all([
+      fetchBootstrap(),
+      readCounts(),
+    ]);
     const resolved = await validateCountInput(bootstrap, {
       counterName,
       locationName,
       skuCode,
-      quantity: Number(quantity),
+      quantity: qty,
     });
 
-    const entry = await updateCountRow(rowIndex, {
+    const duplicate = findDuplicateCount(
+      counts,
+      sessionId,
+      resolved.counter.name,
+      resolved.location.name,
+      resolved.sku.sku,
+      countId,
+    );
+    if (duplicate) {
+      return NextResponse.json(
+        {
+          error: `Another line already has ${resolved.sku.sku} at ${resolved.location.name} (qty ${duplicate.quantity}).`,
+        },
+        { status: 409 },
+      );
+    }
+
+    const entry = await updateCountById(countId, {
       sessionId,
       counter: resolved.counter.name,
       location: resolved.location.name,
       sku: resolved.sku.sku,
-      quantity: resolved.quantity,
+      quantity: qty,
       deviceId: deviceId ?? existing.deviceId,
     });
 
@@ -153,13 +210,13 @@ export async function PATCH(request: Request) {
 export async function DELETE(request: Request) {
   try {
     const body = (await request.json()) as {
-      rowIndex?: number;
+      countId?: string;
       sessionId?: string;
       counterName?: string;
     };
 
-    const { rowIndex, sessionId, counterName } = body;
-    if (!rowIndex || !sessionId || !counterName) {
+    const { countId, sessionId, counterName } = body;
+    if (!countId || !sessionId || !counterName) {
       return NextResponse.json(
         { error: "Missing required fields" },
         { status: 400 },
@@ -169,13 +226,13 @@ export async function DELETE(request: Request) {
     const authError = requireSessionToken(request, sessionId);
     if (authError) return authError;
 
-    const existing = await getCountByRow(rowIndex);
+    const existing = await getCountById(countId);
     if (!existing) {
       return NextResponse.json({ error: "Count not found" }, { status: 404 });
     }
     assertCounterOwnsRow(existing, counterName, sessionId);
 
-    await deleteCountRow(rowIndex);
+    await deleteCountById(countId);
     return NextResponse.json({ ok: true });
   } catch (error) {
     const message =

@@ -7,6 +7,17 @@ import {
 } from "./config";
 import { isSameCounter } from "./counter-auth";
 import { indexCode, normalizeCode, resolveCounter, resolveLocation, resolveSku } from "./match";
+import { pinsMatch } from "./pin-auth";
+import {
+  getCachedBootstrap,
+  getCachedCountById,
+  getCachedCounts,
+  getCachedSheetId,
+  invalidateCountsCache,
+  setCachedBootstrap,
+  setCachedCounts,
+  setCachedSheetId,
+} from "./sheet-cache";
 
 export { resolveCounter, resolveLocation, resolveSku } from "./match";
 import type {
@@ -50,6 +61,9 @@ async function readTab(tab: string): Promise<string[][]> {
 }
 
 async function getSheetId(tab: string): Promise<number> {
+  const cached = getCachedSheetId(tab);
+  if (cached !== undefined) return cached;
+
   assertSheetConfig();
   const meta = await getSheets().spreadsheets.get({
     spreadsheetId: sheetConfig.spreadsheetId,
@@ -60,6 +74,7 @@ async function getSheetId(tab: string): Promise<number> {
   if (sheetId === undefined || sheetId === null) {
     throw new Error(`Sheet not found: ${tab}`);
   }
+  setCachedSheetId(tab, sheetId);
   return sheetId;
 }
 
@@ -82,6 +97,9 @@ function parseCountRow(row: string[], rowIndex: number): CountEntry | null {
 }
 
 export async function fetchBootstrap(): Promise<BootstrapData> {
+  const cached = getCachedBootstrap();
+  if (cached) return cached;
+
   const [sessionRows, counterRows, locationRows, skuRows] = await Promise.all([
     readTab(sheetConfig.sessions),
     readTab(sheetConfig.counters),
@@ -123,7 +141,9 @@ export async function fetchBootstrap(): Promise<BootstrapData> {
     })
     .filter((s) => s.sku || s.code);
 
-  return { sessions, counters, locations, skus };
+  const data = { sessions, counters, locations, skus };
+  setCachedBootstrap(data);
+  return data;
 }
 
 export async function verifySessionPin(
@@ -143,13 +163,13 @@ export async function verifySessionPin(
     if (cell(row, sm.id) !== sessionId) continue;
     const expectedPin = cell(row, sm.pin);
     if (!expectedPin) return "not_required";
-    if (pin.trim() === expectedPin) return "ok";
+    if (pinsMatch(pin, expectedPin)) return "ok";
     return "invalid";
   }
   return "not_found";
 }
 
-export async function readCounts(): Promise<CountEntry[]> {
+async function loadCountsFromSheet(): Promise<CountEntry[]> {
   assertSheetConfig();
   const res = await getSheets().spreadsheets.values.get({
     spreadsheetId: sheetConfig.spreadsheetId,
@@ -164,11 +184,23 @@ export async function readCounts(): Promise<CountEntry[]> {
   return entries;
 }
 
-export async function getCountByRow(
-  rowIndex: number,
+export async function readCounts(): Promise<CountEntry[]> {
+  const cached = getCachedCounts();
+  if (cached) return cached;
+
+  const entries = await loadCountsFromSheet();
+  setCachedCounts(entries);
+  return entries;
+}
+
+export async function getCountById(
+  countId: string,
 ): Promise<CountEntry | undefined> {
+  const cached = getCachedCountById(countId);
+  if (cached) return cached;
+
   const counts = await readCounts();
-  return counts.find((c) => c.rowIndex === rowIndex);
+  return counts.find((c) => c.countId === countId);
 }
 
 export async function fetchCounterHistory(
@@ -207,6 +239,8 @@ export async function appendCount(
     insertDataOption: "INSERT_ROWS",
     requestBody: { values: [row] },
   });
+  invalidateCountsCache();
+
   const updatedRange = res.data.updates?.updatedRange ?? "";
   const rowMatch = updatedRange.match(/!A(\d+)/i);
   const rowIndex = rowMatch ? Number(rowMatch[1]) : 0;
@@ -218,8 +252,8 @@ export async function appendCount(
   } satisfies CountEntry;
 }
 
-export async function updateCountRow(
-  rowIndex: number,
+export async function updateCountById(
+  countId: string,
   entry: {
     sessionId: string;
     counter: string;
@@ -230,8 +264,10 @@ export async function updateCountRow(
   },
 ) {
   assertSheetConfig();
-  const existing = await getCountByRow(rowIndex);
-  if (!existing) throw new Error("Count row not found");
+  const existing = await getCountById(countId);
+  if (!existing?.countId) throw new Error("Count not found");
+  if (!existing.rowIndex) throw new Error("Count row not found");
+
   const row = [
     existing.timestamp,
     entry.sessionId,
@@ -240,23 +276,26 @@ export async function updateCountRow(
     entry.sku,
     String(entry.quantity),
     entry.deviceId,
-    existing.countId || crypto.randomUUID(),
+    existing.countId,
   ];
   await getSheets().spreadsheets.values.update({
     spreadsheetId: sheetConfig.spreadsheetId,
-    range: `'${sheetConfig.counts.replace(/'/g, "''")}'!A${rowIndex}:H${rowIndex}`,
+    range: `'${sheetConfig.counts.replace(/'/g, "''")}'!A${existing.rowIndex}:H${existing.rowIndex}`,
     valueInputOption: "USER_ENTERED",
     requestBody: { values: [row] },
   });
+  invalidateCountsCache();
   return {
     ...existing,
     ...entry,
-    countId: row[7] as string,
   } satisfies CountEntry;
 }
 
-export async function deleteCountRow(rowIndex: number) {
+export async function deleteCountById(countId: string) {
   assertSheetConfig();
+  const existing = await getCountById(countId);
+  if (!existing?.rowIndex) throw new Error("Count not found");
+
   const sheetId = await getSheetId(sheetConfig.counts);
   await getSheets().spreadsheets.batchUpdate({
     spreadsheetId: sheetConfig.spreadsheetId,
@@ -267,33 +306,39 @@ export async function deleteCountRow(rowIndex: number) {
             range: {
               sheetId,
               dimension: "ROWS",
-              startIndex: rowIndex - 1,
-              endIndex: rowIndex,
+              startIndex: existing.rowIndex - 1,
+              endIndex: existing.rowIndex,
             },
           },
         },
       ],
     },
   });
+  invalidateCountsCache();
 }
 
 export async function fetchDashboard(
   sessionId: string,
   bootstrap?: BootstrapData,
 ): Promise<DashboardMetrics> {
-  const data = bootstrap ?? (await fetchBootstrap());
-  const counts = (await readCounts()).filter((c) => c.sessionId === sessionId);
+  const [data, counts] = await Promise.all([
+    bootstrap ? Promise.resolve(bootstrap) : fetchBootstrap(),
+    readCounts(),
+  ]);
+  const sessionCounts = counts.filter((c) => c.sessionId === sessionId);
   const session = data.sessions.find((s) => s.id === sessionId);
 
   const locationCodes = new Set(
-    counts.map((c) => c.location).filter(Boolean),
+    sessionCounts.map((c) => c.location).filter(Boolean),
   );
-  const skuCodes = new Set(counts.map((c) => c.sku).filter(Boolean));
-  const counterNames = new Set(counts.map((c) => c.counter).filter(Boolean));
+  const skuCodes = new Set(sessionCounts.map((c) => c.sku).filter(Boolean));
+  const counterNames = new Set(
+    sessionCounts.map((c) => c.counter).filter(Boolean),
+  );
 
   const locationTotals = new Map<string, number>();
   const counterTotals = new Map<string, number>();
-  for (const c of counts) {
+  for (const c of sessionCounts) {
     locationTotals.set(
       c.location,
       (locationTotals.get(c.location) ?? 0) + 1,
@@ -318,10 +363,10 @@ export async function fetchDashboard(
     locationsTotal: data.locations.length,
     skusScanned: skuCodes.size,
     skusTotal: data.skus.length,
-    totalLines: counts.length,
-    totalQuantity: counts.reduce((sum, c) => sum + c.quantity, 0),
+    totalLines: sessionCounts.length,
+    totalQuantity: sessionCounts.reduce((sum, c) => sum + c.quantity, 0),
     activeCounters: counterNames.size,
-    recentCounts: counts.slice(-8).reverse(),
+    recentCounts: sessionCounts.slice(-8).reverse(),
     topLocations,
     topCounters,
   };

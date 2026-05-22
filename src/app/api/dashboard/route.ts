@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { requireSessionToken } from "@/lib/require-session-token";
 import { fetchDashboard } from "@/lib/sheets";
 
 export const dynamic = "force-dynamic";
@@ -12,6 +13,10 @@ export async function GET(request: Request) {
         { status: 400 },
       );
     }
+
+    const authError = requireSessionToken(request, sessionId);
+    if (authError) return authError;
+
     const metrics = await fetchDashboard(sessionId);
     return NextResponse.json(metrics);
   } catch (error) {

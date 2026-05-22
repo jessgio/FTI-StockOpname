@@ -56,7 +56,9 @@ If `barcode` is empty, the `sku` column is used for matching.
 
 The app appends one row per saved count. Column **count_id** (H) is auto-generated for edit/delete. Existing rows without `count_id` can still be edited by row.
 
-Counters can view, edit, and delete **only their own** lines for the active session on the count screen.
+Counters can view, edit, and delete **only their own** lines for the active session (by `count_id`). Duplicate lines for the same counter + location + SKU in one session are blocked; another counter may count the same SKU at the same location for double-checks.
+
+The **dashboard** uses the same session PIN as counting.
 
 ## Google Cloud setup
 

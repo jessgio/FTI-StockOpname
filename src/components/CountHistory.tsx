@@ -22,7 +22,7 @@ export function CountHistory({
 }) {
   const [history, setHistory] = useState<CountEntry[]>([]);
   const [loading, setLoading] = useState(true);
-  const [editingRow, setEditingRow] = useState<number | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [draft, setDraft] = useState<EditDraft | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -51,7 +51,11 @@ export function CountHistory({
   }, [loadHistory, refreshKey]);
 
   function startEdit(entry: CountEntry) {
-    setEditingRow(entry.rowIndex);
+    if (!entry.countId) {
+      setError("This older line has no ID — delete and re-count if needed.");
+      return;
+    }
+    setEditingId(entry.countId);
     setDraft({
       location: entry.location,
       sku: entry.sku,
@@ -61,7 +65,7 @@ export function CountHistory({
   }
 
   async function saveEdit(entry: CountEntry) {
-    if (!draft) return;
+    if (!draft || !entry.countId) return;
     const qty = Number(draft.quantity);
     if (Number.isNaN(qty) || qty < 0) {
       setError("Enter a valid quantity.");
@@ -74,7 +78,7 @@ export function CountHistory({
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          rowIndex: entry.rowIndex,
+          countId: entry.countId,
           sessionId: deviceSession.sessionId,
           counterName: deviceSession.counterName,
           locationName: draft.location.trim(),
@@ -84,7 +88,7 @@ export function CountHistory({
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Failed to update");
-      setEditingRow(null);
+      setEditingId(null);
       setDraft(null);
       await loadHistory();
     } catch (err) {
@@ -95,6 +99,10 @@ export function CountHistory({
   }
 
   async function remove(entry: CountEntry) {
+    if (!entry.countId) {
+      setError("This older line has no ID — cannot delete from the app.");
+      return;
+    }
     if (!confirm(`Delete ${entry.sku} × ${entry.quantity} @ ${entry.location}?`)) {
       return;
     }
@@ -105,15 +113,15 @@ export function CountHistory({
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          rowIndex: entry.rowIndex,
+          countId: entry.countId,
           sessionId: deviceSession.sessionId,
           counterName: deviceSession.counterName,
         }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Failed to delete");
-      if (editingRow === entry.rowIndex) {
-        setEditingRow(null);
+      if (editingId === entry.countId) {
+        setEditingId(null);
         setDraft(null);
       }
       await loadHistory();
@@ -158,10 +166,10 @@ export function CountHistory({
         <ul className="space-y-3">
           {history.map((entry) => (
             <li
-              key={`${entry.rowIndex}-${entry.countId || entry.timestamp}`}
+              key={entry.countId || `row-${entry.rowIndex}`}
               className="rounded-xl border border-stone-200 bg-stone-50 p-3"
             >
-              {editingRow === entry.rowIndex && draft ? (
+              {editingId === entry.countId && draft ? (
                 <div className="space-y-2">
                   <input
                     className="w-full rounded-lg border border-stone-300 px-3 py-2 text-sm"
@@ -199,7 +207,7 @@ export function CountHistory({
                       variant="secondary"
                       disabled={busy}
                       onClick={() => {
-                        setEditingRow(null);
+                        setEditingId(null);
                         setDraft(null);
                       }}
                     >
@@ -225,7 +233,7 @@ export function CountHistory({
                     <Button
                       type="button"
                       variant="secondary"
-                      disabled={busy}
+                      disabled={busy || !entry.countId}
                       onClick={() => startEdit(entry)}
                     >
                       Edit
@@ -233,7 +241,7 @@ export function CountHistory({
                     <Button
                       type="button"
                       variant="danger"
-                      disabled={busy}
+                      disabled={busy || !entry.countId}
                       onClick={() => void remove(entry)}
                     >
                       Delete
