@@ -9,7 +9,12 @@ export async function apiFetch(
   if (auth?.token) {
     headers.set("X-Session-Token", auth.token);
   }
-  if (init.body && !headers.has("Content-Type")) {
+  const shouldSetJsonContentType =
+    init.body &&
+    !headers.has("Content-Type") &&
+    !(init.body instanceof FormData) &&
+    !(init.body instanceof URLSearchParams);
+  if (shouldSetJsonContentType) {
     headers.set("Content-Type", "application/json");
   }
   return fetch(url, { ...init, headers });
