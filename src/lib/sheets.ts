@@ -97,9 +97,13 @@ function parseCountRow(row: string[], rowIndex: number): CountEntry | null {
   };
 }
 
-export async function fetchBootstrap(): Promise<BootstrapData> {
-  const cached = getCachedBootstrap();
-  if (cached) return cached;
+export async function fetchBootstrap(
+  options?: { fresh?: boolean },
+): Promise<BootstrapData> {
+  if (!options?.fresh) {
+    const cached = getCachedBootstrap();
+    if (cached) return cached;
+  }
 
   const [sessionRows, counterRows, locationRows, skuRows] = await Promise.all([
     readTab(sheetConfig.sessions),
