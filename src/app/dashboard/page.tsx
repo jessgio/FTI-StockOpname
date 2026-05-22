@@ -352,7 +352,8 @@ export default function DashboardPage() {
                     </span>
                     <span className="text-stone-600">
                       Expected {row.expectedQty} · Counted {row.countedQty} · Gap{" "}
-                      <strong>{row.gapQty}</strong>
+                      <strong>{row.gapQty}</strong> · Variance{" "}
+                      <strong>{row.variancePct}%</strong>
                     </span>
                   </li>
                 ))}

@@ -65,13 +65,14 @@ The **dashboard** uses the same session PIN as counting.
 
 Generated from Admin import (`/admin/opname`) using the uploaded Excel file:
 
-| gudang | sku | expected_qty | counted_qty | gap_qty | last_updated |
-|--------|-----|--------------|-------------|---------|--------------|
+| gudang | sku | expected_qty | counted_qty | gap_qty | variance_pct | last_updated |
+|--------|-----|--------------|-------------|---------|--------------|--------------|
 
 - `gudang`: from Excel column header **Lokasi**.
 - `expected_qty`: sum of each unique SKU+Gudang pair from Excel column header **Tersedia**.
 - `counted_qty`: live sum from the `Counts` tab for the same session and SKU+Gudang pair.
 - `gap_qty`: `counted_qty - expected_qty` (positive = over, negative = short).
+- `variance_pct`: `(gap_qty / expected_qty) * 100`, rounded to 2 decimals (0 when expected is 0).
 - Rows are excluded from baseline import when `Lokasi` is empty or SKU starts with `BND-`.
 
 This sheet is refreshed automatically every time a count is added, edited, or deleted.

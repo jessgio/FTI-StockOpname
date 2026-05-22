@@ -78,6 +78,7 @@ export interface SessionStockRow {
   expectedQty: number;
   countedQty: number;
   gapQty: number;
+  variancePct: number;
   lastUpdated: string;
 }
 
@@ -87,4 +88,5 @@ export interface StockGapRow {
   expectedQty: number;
   countedQty: number;
   gapQty: number;
+  variancePct: number;
 }

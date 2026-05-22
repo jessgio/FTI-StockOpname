@@ -8,6 +8,7 @@ const STOCK_HEADERS = [
   "expected_qty",
   "counted_qty",
   "gap_qty",
+  "variance_pct",
   "last_updated",
 ];
 
@@ -36,12 +37,17 @@ function sanitizeSheetTitle(title: string): string {
   return title.replace(/[\\/?*[\]:]/g, "_").slice(0, 100);
 }
 
-function tabRange(tab: string, range = "A:F"): string {
+function tabRange(tab: string, range = "A:G"): string {
   return `'${tab.replace(/'/g, "''")}'!${range}`;
 }
 
 function sessionStockTabName(sessionId: string): string {
   return sanitizeSheetTitle(`${sheetConfig.opnamePrefix}${sessionId}`);
+}
+
+function calculateVariancePct(expectedQty: number, gapQty: number): number {
+  if (expectedQty === 0) return 0;
+  return Number(((gapQty / expectedQty) * 100).toFixed(2));
 }
 
 async function readLocationMap(): Promise<Map<string, string>> {
@@ -116,7 +122,7 @@ async function readSessionStockRows(tab: string): Promise<SessionStockRow[]> {
   assertSheetConfig();
   const response = await getSheets().spreadsheets.values.get({
     spreadsheetId: sheetConfig.spreadsheetId,
-    range: tabRange(tab, "A:F"),
+    range: tabRange(tab, "A:G"),
   });
   const rows = response.data.values ?? [];
   if (rows.length <= 1) return [];
@@ -133,7 +139,8 @@ async function readSessionStockRows(tab: string): Promise<SessionStockRow[]> {
       expectedQty: toNumber(cell(row, 2)),
       countedQty: toNumber(cell(row, 3)),
       gapQty: toNumber(cell(row, 4)),
-      lastUpdated: cell(row, 5),
+      variancePct: toNumber(cell(row, 5)),
+      lastUpdated: cell(row, 6),
     });
   }
   return parsed;
@@ -151,12 +158,14 @@ function buildStockRows(
       const [gudang, sku] = key.split("|||");
       const expectedQty = expectedByGudangSku.get(key) ?? 0;
       const countedQty = countedByGudangSku.get(key) ?? 0;
+      const gapQty = countedQty - expectedQty;
       return {
         gudang: gudang || "UNMAPPED",
         sku,
         expectedQty,
         countedQty,
-        gapQty: countedQty - expectedQty,
+        gapQty,
+        variancePct: calculateVariancePct(expectedQty, gapQty),
         lastUpdated: now,
       };
     });
@@ -170,11 +179,12 @@ async function writeStockRows(tab: string, rows: SessionStockRow[]): Promise<voi
     String(row.expectedQty),
     String(row.countedQty),
     String(row.gapQty),
+    String(row.variancePct),
     row.lastUpdated,
   ]);
   await getSheets().spreadsheets.values.update({
     spreadsheetId: sheetConfig.spreadsheetId,
-    range: tabRange(tab, "A:F"),
+    range: tabRange(tab, "A:G"),
     valueInputOption: "USER_ENTERED",
     requestBody: {
       values: [STOCK_HEADERS, ...bodyRows],
@@ -297,6 +307,7 @@ export async function getSessionStockGap(
       expectedQty: r.expectedQty,
       countedQty: r.countedQty,
       gapQty: r.gapQty,
+      variancePct: r.variancePct,
     }));
 
   return {
