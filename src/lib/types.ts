@@ -73,6 +73,7 @@ export interface DeviceSession {
 }
 
 export interface SessionStockRow {
+  gudang: string;
   sku: string;
   expectedQty: number;
   countedQty: number;
@@ -81,6 +82,7 @@ export interface SessionStockRow {
 }
 
 export interface StockGapRow {
+  gudang: string;
   sku: string;
   expectedQty: number;
   countedQty: number;

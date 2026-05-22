@@ -340,14 +340,16 @@ export default function DashboardPage() {
 
           {metrics.stockGapPreview.length > 0 ? (
             <Card>
-              <h3 className="mb-2 font-medium">Largest SKU gaps</h3>
+              <h3 className="mb-2 font-medium">Largest SKU+Gudang gaps</h3>
               <ul className="space-y-1 text-sm">
                 {metrics.stockGapPreview.map((row) => (
                   <li
-                    key={row.sku}
+                    key={`${row.gudang}-${row.sku}`}
                     className="flex items-center justify-between border-b border-stone-100 py-2"
                   >
-                    <span className="font-medium">{row.sku}</span>
+                    <span className="font-medium">
+                      {row.sku} <span className="text-stone-500">@ {row.gudang}</span>
+                    </span>
                     <span className="text-stone-600">
                       Expected {row.expectedQty} · Counted {row.countedQty} · Gap{" "}
                       <strong>{row.gapQty}</strong>

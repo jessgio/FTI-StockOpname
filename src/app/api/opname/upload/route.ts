@@ -47,16 +47,29 @@ export async function POST(request: Request) {
     const hasTersedia = Object.keys(jsonRows[0]).some(
       (key) => key.trim().toLowerCase() === "tersedia",
     );
+    const hasLokasi = Object.keys(jsonRows[0]).some(
+      (key) => key.trim().toLowerCase() === "lokasi",
+    );
     if (!hasTersedia) {
       return NextResponse.json(
         { error: 'Excel must include a "Tersedia" column header' },
         { status: 400 },
       );
     }
+    if (!hasLokasi) {
+      return NextResponse.json(
+        { error: 'Excel must include a "Lokasi" column header' },
+        { status: 400 },
+      );
+    }
 
-    const expectedBySku = parseExpectedRowsFromExcel(jsonRows);
+    const expectedByGudangSku = parseExpectedRowsFromExcel(jsonRows);
     const allCounts = await readCounts();
-    const result = await upsertSessionStockSheet(sessionId, expectedBySku, allCounts);
+    const result = await upsertSessionStockSheet(
+      sessionId,
+      expectedByGudangSku,
+      allCounts,
+    );
 
     return NextResponse.json({
       ok: true,
@@ -64,7 +77,7 @@ export async function POST(request: Request) {
       sessionName: session.name,
       sheetTitle: result.sheetTitle,
       sourceRows: jsonRows.length,
-      uniqueSkus: expectedBySku.size,
+      uniqueSkuGudangPairs: expectedByGudangSku.size,
       rowsWritten: result.rowsWritten,
     });
   } catch (error) {

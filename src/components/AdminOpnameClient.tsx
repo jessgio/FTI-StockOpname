@@ -83,7 +83,7 @@ export function AdminOpnameClient({ bootstrap }: { bootstrap: BootstrapData }) {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Failed to upload file");
       setSuccess(
-        `Imported ${data.uniqueSkus} SKUs from ${data.sourceRows} rows into sheet ${data.sheetTitle}.`,
+        `Imported ${data.uniqueSkuGudangPairs} SKU+Gudang rows from ${data.sourceRows} rows into sheet ${data.sheetTitle}.`,
       );
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to upload file");

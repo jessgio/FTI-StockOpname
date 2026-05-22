@@ -2,7 +2,14 @@ import { google, sheets_v4 } from "googleapis";
 import { assertSheetConfig, getServiceAccountCredentials, sheetConfig } from "./config";
 import type { CountEntry, SessionStockRow, StockGapRow } from "./types";
 
-const STOCK_HEADERS = ["sku", "expected_qty", "counted_qty", "gap_qty", "last_updated"];
+const STOCK_HEADERS = [
+  "gudang",
+  "sku",
+  "expected_qty",
+  "counted_qty",
+  "gap_qty",
+  "last_updated",
+];
 
 let sheetsClient: sheets_v4.Sheets | null = null;
 
@@ -29,7 +36,7 @@ function sanitizeSheetTitle(title: string): string {
   return title.replace(/[\\/?*[\]:]/g, "_").slice(0, 100);
 }
 
-function tabRange(tab: string, range = "A:E"): string {
+function tabRange(tab: string, range = "A:F"): string {
   return `'${tab.replace(/'/g, "''")}'!${range}`;
 }
 
@@ -68,13 +75,18 @@ async function ensureSessionSheet(tab: string): Promise<void> {
   });
 }
 
-function aggregateCountedBySku(counts: CountEntry[], sessionId: string): Map<string, number> {
+function aggregateCountedByGudangSku(
+  counts: CountEntry[],
+  sessionId: string,
+): Map<string, number> {
   const grouped = new Map<string, number>();
   for (const row of counts) {
     if (row.sessionId !== sessionId) continue;
     const sku = row.sku.trim();
+    const gudang = row.location.trim() || "UNMAPPED";
     if (!sku) continue;
-    grouped.set(sku, (grouped.get(sku) ?? 0) + row.quantity);
+    const key = `${gudang}|||${sku}`;
+    grouped.set(key, (grouped.get(key) ?? 0) + row.quantity);
   }
   return grouped;
 }
@@ -83,7 +95,7 @@ async function readSessionStockRows(tab: string): Promise<SessionStockRow[]> {
   assertSheetConfig();
   const response = await getSheets().spreadsheets.values.get({
     spreadsheetId: sheetConfig.spreadsheetId,
-    range: tabRange(tab, "A:E"),
+    range: tabRange(tab, "A:F"),
   });
   const rows = response.data.values ?? [];
   if (rows.length <= 1) return [];
@@ -91,34 +103,38 @@ async function readSessionStockRows(tab: string): Promise<SessionStockRow[]> {
   const parsed: SessionStockRow[] = [];
   for (let i = 1; i < rows.length; i += 1) {
     const row = rows[i];
-    const sku = cell(row, 0);
+    const gudang = cell(row, 0);
+    const sku = cell(row, 1);
     if (!sku) continue;
     parsed.push({
+      gudang: gudang || "UNMAPPED",
       sku,
-      expectedQty: toNumber(cell(row, 1)),
-      countedQty: toNumber(cell(row, 2)),
-      gapQty: toNumber(cell(row, 3)),
-      lastUpdated: cell(row, 4),
+      expectedQty: toNumber(cell(row, 2)),
+      countedQty: toNumber(cell(row, 3)),
+      gapQty: toNumber(cell(row, 4)),
+      lastUpdated: cell(row, 5),
     });
   }
   return parsed;
 }
 
 function buildStockRows(
-  expectedBySku: Map<string, number>,
-  countedBySku: Map<string, number>,
+  expectedByGudangSku: Map<string, number>,
+  countedByGudangSku: Map<string, number>,
 ): SessionStockRow[] {
-  const allSkus = new Set<string>([
-    ...expectedBySku.keys(),
-    ...countedBySku.keys(),
+  const allKeys = new Set<string>([
+    ...expectedByGudangSku.keys(),
+    ...countedByGudangSku.keys(),
   ]);
   const now = new Date().toISOString();
-  return [...allSkus]
+  return [...allKeys]
     .sort((a, b) => a.localeCompare(b))
-    .map((sku) => {
-      const expectedQty = expectedBySku.get(sku) ?? 0;
-      const countedQty = countedBySku.get(sku) ?? 0;
+    .map((key) => {
+      const [gudang, sku] = key.split("|||");
+      const expectedQty = expectedByGudangSku.get(key) ?? 0;
+      const countedQty = countedByGudangSku.get(key) ?? 0;
       return {
+        gudang: gudang || "UNMAPPED",
         sku,
         expectedQty,
         countedQty,
@@ -131,6 +147,7 @@ function buildStockRows(
 async function writeStockRows(tab: string, rows: SessionStockRow[]): Promise<void> {
   assertSheetConfig();
   const bodyRows = rows.map((row) => [
+    row.gudang,
     row.sku,
     String(row.expectedQty),
     String(row.countedQty),
@@ -139,7 +156,7 @@ async function writeStockRows(tab: string, rows: SessionStockRow[]): Promise<voi
   ]);
   await getSheets().spreadsheets.values.update({
     spreadsheetId: sheetConfig.spreadsheetId,
-    range: tabRange(tab, "A:E"),
+    range: tabRange(tab, "A:F"),
     valueInputOption: "USER_ENTERED",
     requestBody: {
       values: [STOCK_HEADERS, ...bodyRows],
@@ -153,24 +170,30 @@ export function parseExpectedRowsFromExcel(
   const grouped = new Map<string, number>();
   for (const row of rows) {
     const sku = String(row["SKU"] ?? row["sku"] ?? row["Sku"] ?? "").trim();
+    const gudang = String(
+      row["Lokasi"] ?? row["lokasi"] ?? row["LOKASI"] ?? "UNMAPPED",
+    ).trim();
     if (!sku) continue;
+    if (!gudang) continue;
+    if (sku.toUpperCase().startsWith("BND-")) continue;
     const available = row["Tersedia"];
     const qty = Number(String(available ?? "").replace(/,/g, ""));
     const safeQty = Number.isFinite(qty) ? qty : 0;
-    grouped.set(sku, (grouped.get(sku) ?? 0) + safeQty);
+    const key = `${gudang}|||${sku}`;
+    grouped.set(key, (grouped.get(key) ?? 0) + safeQty);
   }
   return grouped;
 }
 
 export async function upsertSessionStockSheet(
   sessionId: string,
-  expectedBySku: Map<string, number>,
+  expectedByGudangSku: Map<string, number>,
   allCounts: CountEntry[],
 ): Promise<{ sheetTitle: string; rowsWritten: number }> {
   const tab = sessionStockTabName(sessionId);
   await ensureSessionSheet(tab);
-  const countedBySku = aggregateCountedBySku(allCounts, sessionId);
-  const rows = buildStockRows(expectedBySku, countedBySku);
+  const countedByGudangSku = aggregateCountedByGudangSku(allCounts, sessionId);
+  const rows = buildStockRows(expectedByGudangSku, countedByGudangSku);
   await writeStockRows(tab, rows);
   return { sheetTitle: tab, rowsWritten: rows.length };
 }
@@ -184,9 +207,11 @@ export async function refreshSessionStockFromCounts(
   if (sheetId === null) return;
 
   const existingRows = await readSessionStockRows(tab);
-  const expectedBySku = new Map(existingRows.map((r) => [r.sku, r.expectedQty]));
-  const countedBySku = aggregateCountedBySku(allCounts, sessionId);
-  const rows = buildStockRows(expectedBySku, countedBySku);
+  const expectedByGudangSku = new Map(
+    existingRows.map((r) => [`${r.gudang}|||${r.sku}`, r.expectedQty]),
+  );
+  const countedByGudangSku = aggregateCountedByGudangSku(allCounts, sessionId);
+  const rows = buildStockRows(expectedByGudangSku, countedByGudangSku);
   await writeStockRows(tab, rows);
 }
 
@@ -239,6 +264,7 @@ export async function getSessionStockGap(
     .sort((a, b) => Math.abs(b.gapQty) - Math.abs(a.gapQty))
     .slice(0, 20)
     .map((r) => ({
+      gudang: r.gudang,
       sku: r.sku,
       expectedQty: r.expectedQty,
       countedQty: r.countedQty,
