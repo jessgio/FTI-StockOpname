@@ -6,8 +6,9 @@ import {
   sheetConfig,
 } from "./config";
 import { isSameCounter } from "./counter-auth";
-import { indexCode, normalizeCode, resolveCounter, resolveLocation, resolveSku } from "./match";
+import { normalizeCode } from "./match";
 import { pinsMatch } from "./pin-auth";
+import { getSessionStockGap, refreshSessionStockFromCounts } from "./stock-opname";
 import {
   getCachedBootstrap,
   getCachedCountById,
@@ -240,6 +241,8 @@ export async function appendCount(
     requestBody: { values: [row] },
   });
   invalidateCountsCache();
+  const latestCounts = await readCounts();
+  await refreshSessionStockFromCounts(entry.sessionId, latestCounts);
 
   const updatedRange = res.data.updates?.updatedRange ?? "";
   const rowMatch = updatedRange.match(/!A(\d+)/i);
@@ -285,6 +288,8 @@ export async function updateCountById(
     requestBody: { values: [row] },
   });
   invalidateCountsCache();
+  const latestCounts = await readCounts();
+  await refreshSessionStockFromCounts(entry.sessionId, latestCounts);
   return {
     ...existing,
     ...entry,
@@ -315,6 +320,8 @@ export async function deleteCountById(countId: string) {
     },
   });
   invalidateCountsCache();
+  const latestCounts = await readCounts();
+  await refreshSessionStockFromCounts(existing.sessionId, latestCounts);
 }
 
 export async function fetchDashboard(
@@ -355,6 +362,7 @@ export async function fetchDashboard(
     .sort((a, b) => b[1] - a[1])
     .slice(0, 5)
     .map(([name, lines]) => ({ name, lines }));
+  const stockGap = await getSessionStockGap(sessionId);
 
   return {
     sessionId,
@@ -369,5 +377,15 @@ export async function fetchDashboard(
     recentCounts: sessionCounts.slice(-8).reverse(),
     topLocations,
     topCounters,
+    expectedSkuCount: stockGap.expectedSkuCount,
+    countedSkuCount: stockGap.countedSkuCount,
+    matchedSkuCount: stockGap.matchedSkuCount,
+    missingSkuCount: stockGap.missingSkuCount,
+    extraSkuCount: stockGap.extraSkuCount,
+    totalExpectedQty: stockGap.totalExpectedQty,
+    totalCountedQtyForMatchedSkus: stockGap.totalCountedQtyForMatchedSkus,
+    totalGapQty: stockGap.totalGapQty,
+    sessionStockSheetTitle: stockGap.sheetTitle,
+    stockGapPreview: stockGap.preview,
   };
 }

@@ -53,6 +53,16 @@ export interface DashboardMetrics {
   recentCounts: CountEntry[];
   topLocations: { name: string; lines: number }[];
   topCounters: { name: string; lines: number }[];
+  expectedSkuCount: number;
+  countedSkuCount: number;
+  matchedSkuCount: number;
+  missingSkuCount: number;
+  extraSkuCount: number;
+  totalExpectedQty: number;
+  totalCountedQtyForMatchedSkus: number;
+  totalGapQty: number;
+  sessionStockSheetTitle: string | null;
+  stockGapPreview: StockGapRow[];
 }
 
 export interface DeviceSession {
@@ -60,4 +70,19 @@ export interface DeviceSession {
   sessionName: string;
   counterName: string;
   startedAt: string;
+}
+
+export interface SessionStockRow {
+  sku: string;
+  expectedQty: number;
+  countedQty: number;
+  gapQty: number;
+  lastUpdated: string;
+}
+
+export interface StockGapRow {
+  sku: string;
+  expectedQty: number;
+  countedQty: number;
+  gapQty: number;
 }

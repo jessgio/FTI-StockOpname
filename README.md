@@ -8,6 +8,7 @@ Lightweight stock counting app for **From This Island**, using Google Sheets as 
 - **Scan or type** — QR scanner for counter, location, and SKU; manual entry supported.
 - **Google Sheets backend** — indexes and counts live in your spreadsheet.
 - **Dashboard** — locations scanned, SKUs counted, totals, top locations/counters, recent lines.
+- **Admin stock import** — upload Excel baseline by session, auto-create a `SO_<sessionId>` tab, and monitor real-time stock gap.
 
 ## Google Sheet layout
 
@@ -60,6 +61,19 @@ Counters can view, edit, and delete **only their own** lines for the active sess
 
 The **dashboard** uses the same session PIN as counting.
 
+### Session stock sheet (`SO_<sessionId>`)
+
+Generated from Admin import (`/admin/opname`) using the uploaded Excel file:
+
+| sku | expected_qty | counted_qty | gap_qty | last_updated |
+|-----|--------------|-------------|---------|--------------|
+
+- `expected_qty`: sum of each unique SKU from Excel column header **Tersedia**.
+- `counted_qty`: live sum from the `Counts` tab for the same session and SKU.
+- `gap_qty`: `counted_qty - expected_qty` (positive = over, negative = short).
+
+This sheet is refreshed automatically every time a count is added, edited, or deleted.
+
 ## Google Cloud setup
 
 1. Create a service account and download the JSON key.
@@ -106,6 +120,7 @@ Or connect the GitHub repo in the Vercel dashboard. Set the environment variable
 | `/` | Home |
 | `/count` | Counting flow |
 | `/dashboard` | Progress metrics |
+| `/admin/opname` | Admin Excel import + baseline session stock sheet |
 
 ## Custom column layout
 

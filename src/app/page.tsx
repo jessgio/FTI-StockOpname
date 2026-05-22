@@ -15,6 +15,7 @@ export default function HomePage() {
         <div className="grid gap-3">
           <NavLink href="/count">Start counting</NavLink>
           <NavLink href="/dashboard">Open dashboard</NavLink>
+          <NavLink href="/admin/opname">Admin stock import</NavLink>
         </div>
       </Card>
 

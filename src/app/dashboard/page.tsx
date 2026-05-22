@@ -287,6 +287,78 @@ export default function DashboardPage() {
           </div>
 
           <Card>
+            <h3 className="mb-2 font-medium">Stock gap monitor</h3>
+            {metrics.sessionStockSheetTitle ? (
+              <>
+                <p className="mb-3 text-sm text-stone-600">
+                  Tracking against sheet <strong>{metrics.sessionStockSheetTitle}</strong>.
+                </p>
+                <div className="grid grid-cols-2 gap-3">
+                  <StatTile
+                    label="Expected SKUs"
+                    value={metrics.expectedSkuCount}
+                    hint="From uploaded Tersedia totals"
+                  />
+                  <StatTile
+                    label="Counted SKUs"
+                    value={metrics.countedSkuCount}
+                    hint="Any SKU with count > 0"
+                  />
+                  <StatTile
+                    label="Matched SKUs"
+                    value={metrics.matchedSkuCount}
+                    hint="Expected and counted"
+                  />
+                  <StatTile
+                    label="Missing SKUs"
+                    value={metrics.missingSkuCount}
+                    hint="Expected but not counted"
+                  />
+                  <StatTile
+                    label="Extra SKUs"
+                    value={metrics.extraSkuCount}
+                    hint="Counted but not expected"
+                  />
+                  <StatTile
+                    label="Net gap qty"
+                    value={metrics.totalGapQty}
+                    hint="Counted minus expected"
+                  />
+                </div>
+                <p className="mt-3 text-xs text-stone-500">
+                  Expected qty: {metrics.totalExpectedQty} · Counted qty (matched
+                  SKUs): {metrics.totalCountedQtyForMatchedSkus}
+                </p>
+              </>
+            ) : (
+              <p className="text-sm text-stone-600">
+                No stock baseline uploaded for this session yet. Import from{" "}
+                <strong>/admin/opname</strong> first.
+              </p>
+            )}
+          </Card>
+
+          {metrics.stockGapPreview.length > 0 ? (
+            <Card>
+              <h3 className="mb-2 font-medium">Largest SKU gaps</h3>
+              <ul className="space-y-1 text-sm">
+                {metrics.stockGapPreview.map((row) => (
+                  <li
+                    key={row.sku}
+                    className="flex items-center justify-between border-b border-stone-100 py-2"
+                  >
+                    <span className="font-medium">{row.sku}</span>
+                    <span className="text-stone-600">
+                      Expected {row.expectedQty} · Counted {row.countedQty} · Gap{" "}
+                      <strong>{row.gapQty}</strong>
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </Card>
+          ) : null}
+
+          <Card>
             <h3 className="mb-2 font-medium">Top locations</h3>
             {metrics.topLocations.length === 0 ? (
               <p className="text-sm text-stone-600">No counts yet.</p>
