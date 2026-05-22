@@ -60,6 +60,7 @@ export function Button({
   };
   return (
     <button
+      type={props.type ?? "button"}
       className={`${base} ${variants[variant]} ${className}`}
       {...props}
     >

@@ -4,6 +4,19 @@ import { Html5Qrcode } from "html5-qrcode";
 import { useEffect, useId, useRef, useState } from "react";
 import { Button } from "./ui";
 
+async function safeStopScanner(scanner: Html5Qrcode) {
+  try {
+    await scanner.stop();
+  } catch {
+    /* already stopped or not started */
+  }
+  try {
+    scanner.clear();
+  } catch {
+    /* ignore */
+  }
+}
+
 export function QrScanner({
   onScan,
   onClose,
@@ -13,10 +26,17 @@ export function QrScanner({
 }) {
   const regionId = useId().replace(/:/g, "");
   const scannerRef = useRef<Html5Qrcode | null>(null);
+  const handledRef = useRef(false);
+  const onScanRef = useRef(onScan);
+  const onCloseRef = useRef(onClose);
   const [error, setError] = useState<string | null>(null);
 
+  onScanRef.current = onScan;
+  onCloseRef.current = onClose;
+
   useEffect(() => {
-    let active = true;
+    let cancelled = false;
+    handledRef.current = false;
     const scanner = new Html5Qrcode(regionId);
     scannerRef.current = scanner;
 
@@ -25,33 +45,32 @@ export function QrScanner({
         { facingMode: "environment" },
         { fps: 10, qrbox: { width: 220, height: 220 } },
         (decoded) => {
-          if (!active) return;
-          active = false;
-          void scanner.stop().finally(() => {
-            onScan(decoded.trim());
-            onClose();
-          });
+          if (cancelled || handledRef.current) return;
+          handledRef.current = true;
+          const value = decoded.trim();
+          void (async () => {
+            await safeStopScanner(scanner);
+            if (cancelled) return;
+            onScanRef.current(value);
+            onCloseRef.current();
+          })();
         },
         () => undefined,
       )
       .catch((err: unknown) => {
+        if (cancelled) return;
         const message =
           err instanceof Error ? err.message : "Camera access failed";
         setError(message);
       });
 
     return () => {
-      active = false;
+      cancelled = true;
       const current = scannerRef.current;
-      if (!current) return;
-      void current.stop().catch(() => undefined);
-      try {
-        current.clear();
-      } catch {
-        /* ignore */
-      }
+      scannerRef.current = null;
+      if (current) void safeStopScanner(current);
     };
-  }, [onClose, onScan, regionId]);
+  }, [regionId]);
 
   return (
     <div className="space-y-3">

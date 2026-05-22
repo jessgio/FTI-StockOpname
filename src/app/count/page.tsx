@@ -123,14 +123,14 @@ export default function CountPage() {
     void unlockSession(selectedSession, pinInput);
   }
 
-  function confirmCounter() {
+  function confirmCounter(scannedName?: string) {
     if (!bootstrap || !selectedSession) return;
     if (!isSessionUnlocked(selectedSession.id)) {
       setError("Enter the session PIN first.");
       setStep("pin");
       return;
     }
-    const code = counterInput.trim();
+    const code = (scannedName ?? counterInput).trim();
     if (!code) {
       setError("Enter or scan your name.");
       return;
@@ -271,11 +271,15 @@ export default function CountPage() {
             placeholder="Scan or type your name"
             value={counterInput}
             onChange={setCounterInput}
-            onSubmit={confirmCounter}
+            onSubmit={(value) => confirmCounter(value)}
             autoFocus
           />
           <div className="mt-3 grid gap-2">
-            <Button type="button" variant="secondary" onClick={confirmCounter}>
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => confirmCounter()}
+            >
               Start counting
             </Button>
             <Button

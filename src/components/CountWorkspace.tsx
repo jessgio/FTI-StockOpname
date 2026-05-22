@@ -36,8 +36,8 @@ export function CountWorkspace({
   const [success, setSuccess] = useState<string | null>(null);
   const [historyKey, setHistoryKey] = useState(0);
 
-  function confirmLocation() {
-    const name = locationInput.trim();
+  function confirmLocation(scannedName?: string) {
+    const name = (scannedName ?? locationInput).trim();
     if (!name) {
       setError("Scan or enter a location first.");
       return;
@@ -124,10 +124,14 @@ export function CountWorkspace({
             placeholder="Scan or type location name"
             value={locationInput}
             onChange={setLocationInput}
-            onSubmit={confirmLocation}
+            onSubmit={(value) => confirmLocation(value)}
             autoFocus
           />
-          <Button type="button" className="mt-3" onClick={confirmLocation}>
+          <Button
+            type="button"
+            className="mt-3"
+            onClick={() => confirmLocation()}
+          >
             Lock location
           </Button>
         </Card>

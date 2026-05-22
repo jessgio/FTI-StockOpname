@@ -21,10 +21,18 @@ export function ScanField({
   placeholder: string;
   value: string;
   onChange: (value: string) => void;
-  onSubmit?: () => void;
+  /** Called with the scanned/entered value (avoids stale state after QR scan). */
+  onSubmit?: (value: string) => void;
   autoFocus?: boolean;
 }) {
   const [scanning, setScanning] = useState(false);
+
+  function submitWithValue(nextValue?: string) {
+    const resolved = (nextValue ?? value).trim();
+    if (!resolved) return;
+    onChange(resolved);
+    onSubmit?.(resolved);
+  }
 
   return (
     <div className="space-y-3">
@@ -33,7 +41,7 @@ export function ScanField({
         <QrScanner
           onScan={(code) => {
             onChange(code);
-            onSubmit?.();
+            onSubmit?.(code);
           }}
           onClose={() => setScanning(false)}
         />
@@ -46,7 +54,7 @@ export function ScanField({
             autoFocus={autoFocus}
             onChange={(e) => onChange(e.target.value)}
             onKeyDown={(e) => {
-              if (e.key === "Enter") onSubmit?.();
+              if (e.key === "Enter") submitWithValue();
             }}
           />
           <div className="grid grid-cols-2 gap-2">
@@ -54,7 +62,11 @@ export function ScanField({
               Scan QR
             </Button>
             {onSubmit ? (
-              <Button type="button" variant="secondary" onClick={onSubmit}>
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() => submitWithValue()}
+              >
                 Continue
               </Button>
             ) : null}
