@@ -1,7 +1,19 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { ScanField } from "@/components/ScanField";
+import { SkuScanField } from "@/components/SkuScanField";
 import { apiFetch } from "@/lib/count-api";
+import {
+  getAllowedLocations,
+  getRequiredSkusForLocation,
+  isSkuAllowedAtLocation,
+  locationAssignmentError,
+  sessionAssignmentsEnforced,
+  skuAssignmentError,
+} from "@/lib/assignments";
+import { resolveLocation, resolveSku } from "@/lib/match";
+import { buildSkusForScan } from "@/lib/sku-list";
 import { Button, Card } from "./ui";
 import type { BootstrapData, CountEntry, DeviceSession } from "@/lib/types";
 
@@ -28,6 +40,47 @@ export function CountHistory({
   const [draft, setDraft] = useState<EditDraft | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const allowedLocations = useMemo(
+    () =>
+      getAllowedLocations(
+        deviceSession.sessionId,
+        deviceSession.counterName,
+        bootstrap.assignments,
+        bootstrap.locations,
+      ),
+    [
+      deviceSession.sessionId,
+      deviceSession.counterName,
+      bootstrap.assignments,
+      bootstrap.locations,
+    ],
+  );
+
+  const assignmentsActive = sessionAssignmentsEnforced(
+    deviceSession.sessionId,
+    bootstrap.assignments,
+  );
+
+  const editRequiredSkus = useMemo(() => {
+    if (!draft?.location.trim()) return null;
+    return getRequiredSkusForLocation(
+      deviceSession.sessionId,
+      deviceSession.counterName,
+      draft.location.trim(),
+      bootstrap.assignments,
+    );
+  }, [
+    draft?.location,
+    deviceSession.sessionId,
+    deviceSession.counterName,
+    bootstrap.assignments,
+  ]);
+
+  const editSkusForScan = useMemo(
+    () => buildSkusForScan(bootstrap.skus, editRequiredSkus),
+    [bootstrap.skus, editRequiredSkus],
+  );
 
   const loadHistory = useCallback(async () => {
     setLoading(true);
@@ -66,13 +119,57 @@ export function CountHistory({
     setError(null);
   }
 
+  function validateDraft(d: EditDraft): string | null {
+    const locationName = d.location.trim();
+    const skuTrimmed = d.sku.trim();
+    if (!locationName) return "Enter a location.";
+    if (!skuTrimmed) return "Enter a SKU.";
+
+    const location = resolveLocation(locationName, allowedLocations);
+    if (!location) {
+      return assignmentsActive
+        ? "That location is not assigned to you."
+        : "Location not found.";
+    }
+
+    if (editRequiredSkus?.length) {
+      if (
+        !isSkuAllowedAtLocation(
+          deviceSession.sessionId,
+          deviceSession.counterName,
+          location.name,
+          skuTrimmed,
+          bootstrap.assignments,
+          bootstrap.skus,
+        )
+      ) {
+        return skuAssignmentError(
+          deviceSession.sessionId,
+          deviceSession.counterName,
+          location.name,
+          bootstrap.assignments,
+        );
+      }
+    } else {
+      const resolved = resolveSku(skuTrimmed, bootstrap.skus);
+      if (!resolved && bootstrap.skus.length > 0) {
+        return "Unknown SKU.";
+      }
+    }
+
+    const qty = Number(d.quantity);
+    if (Number.isNaN(qty) || qty < 0) return "Enter a valid quantity.";
+    return null;
+  }
+
   async function saveEdit(entry: CountEntry) {
     if (!draft || !entry.countId) return;
-    const qty = Number(draft.quantity);
-    if (Number.isNaN(qty) || qty < 0) {
-      setError("Enter a valid quantity.");
+    const validationError = validateDraft(draft);
+    if (validationError) {
+      setError(validationError);
       return;
     }
+    const qty = Number(draft.quantity);
     setBusy(true);
     setError(null);
     try {
@@ -174,30 +271,51 @@ export function CountHistory({
               className="rounded-xl border border-stone-200 bg-stone-50 p-3"
             >
               {editingId === entry.countId && draft ? (
-                <div className="space-y-2">
-                  <input
-                    className="w-full rounded-lg border border-stone-300 px-3 py-2 text-sm"
+                <div className="space-y-3">
+                  <p className="text-xs font-medium uppercase tracking-wide text-stone-500">
+                    Edit count
+                  </p>
+                  <ScanField
+                    label="Location"
+                    placeholder="Scan or type location"
                     value={draft.location}
-                    onChange={(e) =>
-                      setDraft({ ...draft, location: e.target.value })
+                    onChange={(location) =>
+                      setDraft((prev) =>
+                        prev ? { ...prev, location } : prev,
+                      )
                     }
-                    placeholder="Location name"
                   />
-                  <input
-                    className="w-full rounded-lg border border-stone-300 px-3 py-2 text-sm"
+                  <SkuScanField
+                    skus={editSkusForScan}
                     value={draft.sku}
-                    onChange={(e) => setDraft({ ...draft, sku: e.target.value })}
-                    placeholder="SKU"
-                  />
-                  <input
-                    type="number"
-                    min={0}
-                    className="w-full rounded-lg border border-stone-300 px-3 py-2 text-sm"
-                    value={draft.quantity}
-                    onChange={(e) =>
-                      setDraft({ ...draft, quantity: e.target.value })
+                    onChange={(sku) =>
+                      setDraft((prev) => (prev ? { ...prev, sku } : prev))
                     }
                   />
+                  <div>
+                    <label className="mb-2 block text-sm font-medium text-stone-800">
+                      Quantity
+                    </label>
+                    <input
+                      type="number"
+                      inputMode="numeric"
+                      min={0}
+                      className="w-full rounded-xl border border-stone-300 px-4 py-3 text-lg outline-none ring-teal-600 focus:ring-2"
+                      value={draft.quantity}
+                      onChange={(e) =>
+                        setDraft({ ...draft, quantity: e.target.value })
+                      }
+                    />
+                  </div>
+                  {assignmentsActive && !allowedLocations.length ? (
+                    <p className="text-sm text-amber-800">
+                      {locationAssignmentError(
+                        deviceSession.sessionId,
+                        deviceSession.counterName,
+                        bootstrap.assignments,
+                      )}
+                    </p>
+                  ) : null}
                   <div className="grid grid-cols-2 gap-2">
                     <Button
                       type="button"

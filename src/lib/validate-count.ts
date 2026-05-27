@@ -1,4 +1,5 @@
 import {
+  getAllowedLocations,
   isLocationAllowedForCounter,
   isSkuAllowedAtLocation,
   locationAssignmentError,
@@ -19,11 +20,18 @@ export async function validateCountInput(
   },
 ) {
   const counter = resolveCounter(input.counterName, bootstrap.counters);
-  const location = resolveLocation(input.locationName, bootstrap.locations);
+  if (!counter) throw new Error("Unknown counter");
+
+  const allowedLocations = getAllowedLocations(
+    input.sessionId,
+    counter.name,
+    bootstrap.assignments,
+    bootstrap.locations,
+  );
+  const location = resolveLocation(input.locationName, allowedLocations);
   const skuCode = input.skuCode.trim();
   let sku = resolveSku(skuCode, bootstrap.skus);
 
-  if (!counter) throw new Error("Unknown counter");
   if (!location) throw new Error("Unknown location");
   if (
     !isLocationAllowedForCounter(
