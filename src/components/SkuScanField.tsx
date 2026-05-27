@@ -67,14 +67,14 @@ export function SkuScanField({
   }, [value, suggestions.length]);
 
   useEffect(() => {
-    if (autoFocus && skus.length > 0) {
+    if (autoFocus) {
       const t = window.setTimeout(() => setOpen(true), 0);
       return () => window.clearTimeout(t);
     }
-  }, [autoFocus, skus.length]);
+  }, [autoFocus]);
 
   function openDropdown() {
-    if (skus.length > 0) setOpen(true);
+    setOpen(true);
   }
 
   function selectSku(sku: Sku) {

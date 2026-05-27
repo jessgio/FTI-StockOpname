@@ -5,7 +5,7 @@ import {
   skuAssignmentError,
 } from "./assignments";
 import { isSameCounter } from "./counter-auth";
-import { resolveCounter, resolveLocation, resolveSku } from "./match";
+import { normalizeCode, resolveCounter, resolveLocation, resolveSku } from "./match";
 import type { BootstrapData, CountEntry } from "./types";
 
 export async function validateCountInput(
@@ -20,7 +20,8 @@ export async function validateCountInput(
 ) {
   const counter = resolveCounter(input.counterName, bootstrap.counters);
   const location = resolveLocation(input.locationName, bootstrap.locations);
-  const sku = resolveSku(input.skuCode, bootstrap.skus);
+  const skuCode = input.skuCode.trim();
+  let sku = resolveSku(skuCode, bootstrap.skus);
 
   if (!counter) throw new Error("Unknown counter");
   if (!location) throw new Error("Unknown location");
@@ -40,7 +41,24 @@ export async function validateCountInput(
       ),
     );
   }
-  if (!sku) throw new Error("Unknown SKU");
+  // If a SKU is assigned for this location but missing from the SKUs tab, we still allow it.
+  // We treat the scanned/typed code as the SKU.
+  if (!sku) {
+    const allowed = isSkuAllowedAtLocation(
+      input.sessionId,
+      counter.name,
+      location.name,
+      skuCode,
+      bootstrap.assignments,
+      bootstrap.skus,
+    );
+    if (!allowed) throw new Error("Unknown SKU");
+    sku = {
+      sku: skuCode,
+      name: "",
+      code: normalizeCode(skuCode),
+    };
+  }
   if (
     !isSkuAllowedAtLocation(
       input.sessionId,
