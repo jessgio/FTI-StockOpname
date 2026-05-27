@@ -10,18 +10,34 @@ const QrScanner = dynamic(
   { ssr: false },
 );
 
-const MAX_SUGGESTIONS = 12;
+const MAX_SUGGESTIONS = 15;
+
+function rankSku(sku: Sku, query: string): number {
+  const q = query.toLowerCase();
+  const code = sku.sku.toLowerCase();
+  const name = sku.name.toLowerCase();
+  const barcode = sku.code.toLowerCase();
+  if (!q) return 0;
+  if (code === q || barcode === q) return 0;
+  if (code.startsWith(q) || barcode.startsWith(q)) return 1;
+  if (name.startsWith(q)) return 2;
+  if (code.includes(q) || barcode.includes(q)) return 3;
+  if (name.includes(q)) return 4;
+  return 99;
+}
 
 function filterSkus(skus: Sku[], query: string): Sku[] {
   const q = query.trim().toLowerCase();
-  if (!q) return [];
-  return skus
-    .filter(
-      (s) =>
-        s.sku.toLowerCase().includes(q) ||
-        s.name.toLowerCase().includes(q) ||
-        s.code.toLowerCase().includes(q),
-    )
+  const pool = q
+    ? skus.filter(
+        (s) =>
+          s.sku.toLowerCase().includes(q) ||
+          s.name.toLowerCase().includes(q) ||
+          s.code.toLowerCase().includes(q),
+      )
+    : [...skus];
+  return pool
+    .sort((a, b) => rankSku(a, q) - rankSku(b, q) || a.sku.localeCompare(b.sku))
     .slice(0, MAX_SUGGESTIONS);
 }
 
@@ -37,12 +53,14 @@ export function SkuScanField({
   autoFocus?: boolean;
 }) {
   const listId = useId();
+  const inputRef = useRef<HTMLInputElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [scanning, setScanning] = useState(false);
   const [open, setOpen] = useState(false);
   const [highlight, setHighlight] = useState(0);
 
   const suggestions = useMemo(() => filterSkus(skus, value), [skus, value]);
+  const showList = open && suggestions.length > 0 && !scanning;
 
   useEffect(() => {
     setHighlight(0);
@@ -61,21 +79,31 @@ export function SkuScanField({
   function selectSku(sku: Sku) {
     onChange(sku.sku);
     setOpen(false);
+    inputRef.current?.focus();
   }
 
   function onKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
-    if (!open || suggestions.length === 0) return;
     if (e.key === "ArrowDown") {
+      if (!showList) {
+        if (suggestions.length > 0) setOpen(true);
+        return;
+      }
       e.preventDefault();
       setHighlight((h) => (h + 1) % suggestions.length);
-    } else if (e.key === "ArrowUp") {
+      return;
+    }
+    if (e.key === "ArrowUp" && showList) {
       e.preventDefault();
       setHighlight((h) => (h - 1 + suggestions.length) % suggestions.length);
-    } else if (e.key === "Enter" && open) {
+      return;
+    }
+    if (e.key === "Enter" && showList) {
       e.preventDefault();
       const picked = suggestions[highlight];
       if (picked) selectSku(picked);
-    } else if (e.key === "Escape") {
+      return;
+    }
+    if (e.key === "Escape") {
       setOpen(false);
     }
   }
@@ -90,7 +118,13 @@ export function SkuScanField({
           onScan={(code) => {
             onChange(code);
             setScanning(false);
-            setOpen(false);
+            const matches = filterSkus(skus, code);
+            if (matches.length === 1) {
+              onChange(matches[0].sku);
+              setOpen(false);
+            } else if (matches.length > 1) {
+              setOpen(true);
+            }
           }}
           onClose={() => setScanning(false)}
         />
@@ -98,13 +132,21 @@ export function SkuScanField({
         <>
           <div className="relative">
             <input
+              ref={inputRef}
               id={listId}
               role="combobox"
-              aria-expanded={open && suggestions.length > 0}
+              aria-expanded={showList}
               aria-controls={`${listId}-listbox`}
               aria-autocomplete="list"
+              aria-activedescendant={
+                showList ? `${listId}-option-${highlight}` : undefined
+              }
               className="w-full rounded-xl border border-stone-300 px-4 py-3 text-lg outline-none ring-teal-600 focus:ring-2"
-              placeholder="Type to search SKU or scan barcode"
+              placeholder={
+                skus.length > 0
+                  ? "Search SKU, name, or barcode…"
+                  : "Type or scan barcode"
+              }
               value={value}
               autoFocus={autoFocus}
               autoComplete="off"
@@ -112,27 +154,40 @@ export function SkuScanField({
                 onChange(e.target.value);
                 setOpen(true);
               }}
-              onFocus={() => value.trim() && setOpen(true)}
+              onFocus={() => {
+                if (skus.length > 0) setOpen(true);
+              }}
               onKeyDown={onKeyDown}
             />
-            {open && suggestions.length > 0 ? (
+            {showList ? (
               <ul
                 id={`${listId}-listbox`}
                 role="listbox"
-                className="absolute z-20 mt-1 max-h-56 w-full overflow-auto rounded-xl border border-stone-200 bg-white py-1 shadow-lg"
+                className="absolute z-20 mt-1 max-h-60 w-full overflow-auto rounded-xl border border-stone-200 bg-white py-1 shadow-lg"
               >
+                {!value.trim() && skus.length > suggestions.length ? (
+                  <li className="px-4 py-1.5 text-xs text-stone-500">
+                    Showing {suggestions.length} of {skus.length} — type to
+                    narrow
+                  </li>
+                ) : null}
                 {suggestions.map((sku, index) => (
-                  <li key={`${sku.sku}-${sku.code}`} role="option">
+                  <li
+                    key={`${sku.sku}-${sku.code}`}
+                    id={`${listId}-option-${index}`}
+                    role="option"
+                    aria-selected={index === highlight}
+                  >
                     <button
                       type="button"
-                      role="presentation"
-                      aria-selected={index === highlight}
+                      tabIndex={-1}
                       className={`w-full px-4 py-2.5 text-left text-sm ${
                         index === highlight
                           ? "bg-teal-50 text-teal-950"
                           : "text-stone-800 hover:bg-stone-50"
                       }`}
                       onMouseDown={(e) => e.preventDefault()}
+                      onMouseEnter={() => setHighlight(index)}
                       onClick={() => selectSku(sku)}
                     >
                       <span className="font-medium">{sku.sku}</span>
@@ -141,7 +196,7 @@ export function SkuScanField({
                       ) : null}
                       {sku.code && sku.code !== sku.sku.toUpperCase() ? (
                         <span className="mt-0.5 block text-xs text-stone-400">
-                          {sku.code}
+                          Barcode: {sku.code}
                         </span>
                       ) : null}
                     </button>
@@ -152,6 +207,8 @@ export function SkuScanField({
           </div>
           {value.trim() && suggestions.length === 0 && skus.length > 0 ? (
             <p className="text-xs text-stone-500">No matching SKUs in the list.</p>
+          ) : open && !value.trim() && skus.length === 0 ? (
+            <p className="text-xs text-stone-500">No SKUs loaded.</p>
           ) : null}
           <Button type="button" onClick={() => setScanning(true)}>
             Scan QR
