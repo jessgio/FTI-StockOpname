@@ -18,6 +18,7 @@ import {
 } from "@/lib/assignments";
 import { resolveGudang } from "@/lib/location-map";
 import { resolveLocation, resolveSku } from "@/lib/match";
+import { buildSkusForScan } from "@/lib/sku-list";
 import {
   clearActiveLocation,
   saveActiveLocation,
@@ -106,18 +107,10 @@ export function CountWorkspace({
     bootstrap.assignments,
   ]);
 
-  const skusForScan = useMemo(() => {
-    if (!requiredSkusAtActive?.length) return bootstrap.skus;
-    const allowed = new Set(
-      requiredSkusAtActive.map((s) => s.trim().toLowerCase()),
-    );
-    return bootstrap.skus.filter(
-      (s) =>
-        allowed.has(s.sku.toLowerCase()) ||
-        allowed.has(s.name.toLowerCase()) ||
-        allowed.has(s.code.toLowerCase()),
-    );
-  }, [bootstrap.skus, requiredSkusAtActive]);
+  const skusForScan = useMemo(
+    () => buildSkusForScan(bootstrap.skus, requiredSkusAtActive),
+    [bootstrap.skus, requiredSkusAtActive],
+  );
 
   const loadMyCounts = useCallback(async () => {
     try {
@@ -354,7 +347,7 @@ export function CountWorkspace({
             </Button>
           </div>
 
-          <Card className="space-y-4">
+          <Card className="space-y-4 overflow-visible">
             <SkuScanField
               skus={skusForScan}
               value={skuInput}

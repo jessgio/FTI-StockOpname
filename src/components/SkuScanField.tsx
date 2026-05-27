@@ -60,21 +60,22 @@ export function SkuScanField({
   const [highlight, setHighlight] = useState(0);
 
   const suggestions = useMemo(() => filterSkus(skus, value), [skus, value]);
-  const showList = open && suggestions.length > 0 && !scanning;
+  const showList = open && !scanning;
 
   useEffect(() => {
     setHighlight(0);
   }, [value, suggestions.length]);
 
   useEffect(() => {
-    function onPointerDown(e: MouseEvent) {
-      if (!containerRef.current?.contains(e.target as Node)) {
-        setOpen(false);
-      }
+    if (autoFocus && skus.length > 0) {
+      const t = window.setTimeout(() => setOpen(true), 0);
+      return () => window.clearTimeout(t);
     }
-    document.addEventListener("mousedown", onPointerDown);
-    return () => document.removeEventListener("mousedown", onPointerDown);
-  }, []);
+  }, [autoFocus, skus.length]);
+
+  function openDropdown() {
+    if (skus.length > 0) setOpen(true);
+  }
 
   function selectSku(sku: Sku) {
     onChange(sku.sku);
@@ -82,22 +83,30 @@ export function SkuScanField({
     inputRef.current?.focus();
   }
 
+  function onBlur() {
+    window.setTimeout(() => {
+      if (!containerRef.current) return;
+      const active = document.activeElement;
+      if (!active) return;
+      if (!containerRef.current.contains(active)) setOpen(false);
+    }, 120);
+  }
+
   function onKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
     if (e.key === "ArrowDown") {
-      if (!showList) {
-        if (suggestions.length > 0) setOpen(true);
-        return;
-      }
       e.preventDefault();
-      setHighlight((h) => (h + 1) % suggestions.length);
+      openDropdown();
+      if (suggestions.length > 0) {
+        setHighlight((h) => (h + 1) % suggestions.length);
+      }
       return;
     }
-    if (e.key === "ArrowUp" && showList) {
+    if (e.key === "ArrowUp" && showList && suggestions.length > 0) {
       e.preventDefault();
       setHighlight((h) => (h - 1 + suggestions.length) % suggestions.length);
       return;
     }
-    if (e.key === "Enter" && showList) {
+    if (e.key === "Enter" && showList && suggestions.length > 0) {
       e.preventDefault();
       const picked = suggestions[highlight];
       if (picked) selectSku(picked);
@@ -124,6 +133,8 @@ export function SkuScanField({
               setOpen(false);
             } else if (matches.length > 1) {
               setOpen(true);
+            } else {
+              setOpen(false);
             }
           }}
           onClose={() => setScanning(false)}
@@ -139,7 +150,9 @@ export function SkuScanField({
               aria-controls={`${listId}-listbox`}
               aria-autocomplete="list"
               aria-activedescendant={
-                showList ? `${listId}-option-${highlight}` : undefined
+                showList && suggestions.length > 0
+                  ? `${listId}-option-${highlight}`
+                  : undefined
               }
               className="w-full rounded-xl border border-stone-300 px-4 py-3 text-lg outline-none ring-teal-600 focus:ring-2"
               placeholder={
@@ -152,64 +165,72 @@ export function SkuScanField({
               autoComplete="off"
               onChange={(e) => {
                 onChange(e.target.value);
-                setOpen(true);
+                openDropdown();
               }}
-              onFocus={() => {
-                if (skus.length > 0) setOpen(true);
-              }}
+              onClick={openDropdown}
+              onFocus={openDropdown}
+              onBlur={onBlur}
               onKeyDown={onKeyDown}
             />
+
             {showList ? (
               <ul
                 id={`${listId}-listbox`}
                 role="listbox"
                 className="absolute z-20 mt-1 max-h-60 w-full overflow-auto rounded-xl border border-stone-200 bg-white py-1 shadow-lg"
               >
-                {!value.trim() && skus.length > suggestions.length ? (
-                  <li className="px-4 py-1.5 text-xs text-stone-500">
-                    Showing {suggestions.length} of {skus.length} — type to
-                    narrow
-                  </li>
-                ) : null}
-                {suggestions.map((sku, index) => (
-                  <li
-                    key={`${sku.sku}-${sku.code}`}
-                    id={`${listId}-option-${index}`}
-                    role="option"
-                    aria-selected={index === highlight}
-                  >
-                    <button
-                      type="button"
-                      tabIndex={-1}
-                      className={`w-full px-4 py-2.5 text-left text-sm ${
-                        index === highlight
-                          ? "bg-teal-50 text-teal-950"
-                          : "text-stone-800 hover:bg-stone-50"
-                      }`}
-                      onMouseDown={(e) => e.preventDefault()}
-                      onMouseEnter={() => setHighlight(index)}
-                      onClick={() => selectSku(sku)}
-                    >
-                      <span className="font-medium">{sku.sku}</span>
-                      {sku.name ? (
-                        <span className="ml-2 text-stone-500">{sku.name}</span>
-                      ) : null}
-                      {sku.code && sku.code !== sku.sku.toUpperCase() ? (
-                        <span className="mt-0.5 block text-xs text-stone-400">
-                          Barcode: {sku.code}
-                        </span>
-                      ) : null}
-                    </button>
-                  </li>
-                ))}
+                {suggestions.length === 0 ? (
+                  <li className="px-4 py-2 text-sm text-stone-500">No matches</li>
+                ) : (
+                  <>
+                    {!value.trim() && skus.length > suggestions.length ? (
+                      <li className="px-4 py-1.5 text-xs text-stone-500">
+                        Showing {suggestions.length} of {skus.length} — type to narrow
+                      </li>
+                    ) : null}
+                    {suggestions.map((sku, index) => (
+                      <li
+                        key={`${sku.sku}-${sku.code}`}
+                        id={`${listId}-option-${index}`}
+                        role="option"
+                        aria-selected={index === highlight}
+                      >
+                        <button
+                          type="button"
+                          tabIndex={-1}
+                          className={`w-full px-4 py-2.5 text-left text-sm ${
+                            index === highlight
+                              ? "bg-teal-50 text-teal-950"
+                              : "text-stone-800 hover:bg-stone-50"
+                          }`}
+                          onMouseDown={(e) => e.preventDefault()}
+                          onMouseEnter={() => setHighlight(index)}
+                          onClick={() => selectSku(sku)}
+                        >
+                          <span className="font-medium">{sku.sku}</span>
+                          {sku.name ? (
+                            <span className="ml-2 text-stone-500">{sku.name}</span>
+                          ) : null}
+                          {sku.code && sku.code !== sku.sku.toUpperCase() ? (
+                            <span className="mt-0.5 block text-xs text-stone-400">
+                              Barcode: {sku.code}
+                            </span>
+                          ) : null}
+                        </button>
+                      </li>
+                    ))}
+                  </>
+                )}
               </ul>
             ) : null}
           </div>
+
           {value.trim() && suggestions.length === 0 && skus.length > 0 ? (
             <p className="text-xs text-stone-500">No matching SKUs in the list.</p>
-          ) : open && !value.trim() && skus.length === 0 ? (
-            <p className="text-xs text-stone-500">No SKUs loaded.</p>
+          ) : skus.length === 0 ? (
+            <p className="text-xs text-stone-500">No SKUs available for this location.</p>
           ) : null}
+
           <Button type="button" onClick={() => setScanning(true)}>
             Scan QR
           </Button>
