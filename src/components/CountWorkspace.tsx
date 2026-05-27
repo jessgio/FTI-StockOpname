@@ -13,8 +13,10 @@ import {
   getAllowedLocations,
   getRequiredSkusForLocation,
   getStaffAssignments,
+  isSkuAllowedAtLocation,
   locationAssignmentError,
   sessionAssignmentsEnforced,
+  skuAssignmentError,
 } from "@/lib/assignments";
 import { resolveGudang } from "@/lib/location-map";
 import { resolveLocation, resolveSku } from "@/lib/match";
@@ -219,19 +221,32 @@ export function CountWorkspace({
       return;
     }
 
-    const resolved = resolveSku(skuInput.trim(), bootstrap.skus);
-    if (!resolved) {
-      setError("Unknown SKU.");
-      return;
-    }
     if (requiredSkusAtActive?.length) {
-      const ok = requiredSkusAtActive.some(
-        (s) => s.toLowerCase() === resolved.sku.toLowerCase(),
+      const allowed = isSkuAllowedAtLocation(
+        deviceSession.sessionId,
+        deviceSession.counterName,
+        activeLocation,
+        skuInput.trim(),
+        bootstrap.assignments,
+        bootstrap.skus,
       );
-      if (!ok) {
+      if (!allowed) {
         setError(
-          `This location requires: ${requiredSkusAtActive.join(", ")}`,
+          skuAssignmentError(
+            deviceSession.sessionId,
+            deviceSession.counterName,
+            activeLocation,
+            bootstrap.assignments,
+          ),
         );
+        return;
+      }
+    } else {
+      // When not restricted, still show a quick local hint if it's in the catalog.
+      // (Server will accept assigned SKUs even if not in SKUs tab.)
+      const resolved = resolveSku(skuInput.trim(), bootstrap.skus);
+      if (!resolved && bootstrap.skus.length > 0) {
+        setError("Unknown SKU.");
         return;
       }
     }
