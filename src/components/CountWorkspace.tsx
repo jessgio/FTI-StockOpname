@@ -221,12 +221,14 @@ export function CountWorkspace({
       return;
     }
 
+    const skuTrimmed = skuInput.trim();
+
     if (requiredSkusAtActive?.length) {
       const allowed = isSkuAllowedAtLocation(
         deviceSession.sessionId,
         deviceSession.counterName,
         activeLocation,
-        skuInput.trim(),
+        skuTrimmed,
         bootstrap.assignments,
         bootstrap.skus,
       );
@@ -242,9 +244,7 @@ export function CountWorkspace({
         return;
       }
     } else {
-      // When not restricted, still show a quick local hint if it's in the catalog.
-      // (Server will accept assigned SKUs even if not in SKUs tab.)
-      const resolved = resolveSku(skuInput.trim(), bootstrap.skus);
+      const resolved = resolveSku(skuTrimmed, bootstrap.skus);
       if (!resolved && bootstrap.skus.length > 0) {
         setError("Unknown SKU.");
         return;
@@ -262,7 +262,7 @@ export function CountWorkspace({
           sessionId: deviceSession.sessionId,
           counterName: deviceSession.counterName,
           locationName: activeLocation,
-          skuCode: skuInput.trim(),
+          skuCode: skuTrimmed,
           quantity: qty,
           deviceId: getDeviceId(),
         }),

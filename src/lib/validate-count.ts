@@ -42,7 +42,6 @@ export async function validateCountInput(
     );
   }
   // If a SKU is assigned for this location but missing from the SKUs tab, we still allow it.
-  // We treat the scanned/typed code as the SKU.
   if (!sku) {
     const allowed = isSkuAllowedAtLocation(
       input.sessionId,
