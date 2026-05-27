@@ -60,6 +60,7 @@ export async function POST(request: Request) {
       readCounts(),
     ]);
     const resolved = await validateCountInput(bootstrap, {
+      sessionId,
       counterName,
       locationName,
       skuCode,
@@ -166,6 +167,7 @@ export async function PATCH(request: Request) {
       readCounts(),
     ]);
     const resolved = await validateCountInput(bootstrap, {
+      sessionId,
       counterName,
       locationName,
       skuCode,

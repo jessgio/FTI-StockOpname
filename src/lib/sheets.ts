@@ -5,6 +5,11 @@ import {
   getServiceAccountCredentials,
   sheetConfig,
 } from "./config";
+import {
+  aggregateCountsBySkuGudang,
+  aggregateSystemStockRows,
+  computeSkuGudangVariances,
+} from "./aggregate";
 import { isSameCounter } from "./counter-auth";
 import { normalizeCode } from "./match";
 import { pinsMatch } from "./pin-auth";
@@ -24,11 +29,14 @@ export { resolveCounter, resolveLocation, resolveSku } from "./match";
 import type {
   BootstrapData,
   Counter,
+  CounterLocationAssignment,
   CountEntry,
   DashboardMetrics,
   Location,
+  LocationGudangMap,
   Sku,
   StockSession,
+  SystemStockRow,
 } from "./types";
 
 let sheetsClient: sheets_v4.Sheets | null = null;
@@ -105,17 +113,28 @@ export async function fetchBootstrap(
     if (cached) return cached;
   }
 
-  const [sessionRows, counterRows, locationRows, skuRows] = await Promise.all([
+  const [
+    sessionRows,
+    counterRows,
+    locationRows,
+    skuRows,
+    assignmentRows,
+    locationMapRows,
+  ] = await Promise.all([
     readTab(sheetConfig.sessions),
     readTab(sheetConfig.counters),
     readTab(sheetConfig.locations),
     readTab(sheetConfig.skus),
+    readTab(sheetConfig.assignments).catch(() => [] as string[][]),
+    readTab(sheetConfig.locationMap).catch(() => [] as string[][]),
   ]);
 
   const sm = columnMaps.sessions;
   const cm = columnMaps.counters;
   const lm = columnMaps.locations;
   const km = columnMaps.skus;
+  const am = columnMaps.assignments;
+  const lmm = columnMaps.locationMap;
 
   const sessions: StockSession[] = sessionRows
     .map((row) => ({
@@ -146,7 +165,30 @@ export async function fetchBootstrap(
     })
     .filter((s) => s.sku || s.code);
 
-  const data = { sessions, counters, locations, skus };
+  const assignments: CounterLocationAssignment[] = assignmentRows
+    .map((row) => ({
+      sessionId: cell(row, am.sessionId),
+      location: cell(row, am.location),
+      name: cell(row, am.name),
+      sku: cell(row, am.sku),
+    }))
+    .filter((a) => a.sessionId && a.name && a.location);
+
+  const locationMap: LocationGudangMap[] = locationMapRows
+    .map((row) => ({
+      location: cell(row, lmm.location),
+      gudang: cell(row, lmm.gudang),
+    }))
+    .filter((m) => m.location && m.gudang);
+
+  const data = {
+    sessions,
+    counters,
+    locations,
+    skus,
+    assignments,
+    locationMap,
+  };
   setCachedBootstrap(data);
   return data;
 }
@@ -328,6 +370,90 @@ export async function deleteCountById(countId: string) {
   await refreshSessionStockFromCounts(existing.sessionId, latestCounts);
 }
 
+function parseSystemStockRow(row: string[], rowIndex: number): SystemStockRow | null {
+  const sm = columnMaps.systemStock;
+  const sessionId = cell(row, sm.sessionId);
+  const sku = cell(row, sm.sku);
+  const gudang = cell(row, sm.gudang);
+  if (!sessionId || !sku || !gudang) return null;
+  return {
+    rowIndex,
+    sessionId,
+    sku,
+    gudang,
+    quantity: Number(cell(row, sm.quantity)) || 0,
+  };
+}
+
+async function loadSystemStockFromSheet(): Promise<SystemStockRow[]> {
+  assertSheetConfig();
+  let rows: string[][];
+  try {
+    rows = await readTab(sheetConfig.systemStock);
+  } catch {
+    return [];
+  }
+  const entries: SystemStockRow[] = [];
+  for (let i = 0; i < rows.length; i++) {
+    const parsed = parseSystemStockRow(rows[i], i + 2);
+    if (parsed) entries.push(parsed);
+  }
+  return entries;
+}
+
+export async function readSystemStockForSession(
+  sessionId: string,
+): Promise<SystemStockRow[]> {
+  const rows = await loadSystemStockFromSheet();
+  return rows.filter((r) => r.sessionId === sessionId);
+}
+
+/** Replace all system stock rows for a session (aggregated SKU × gudang on write). */
+export async function replaceSystemStockForSession(
+  sessionId: string,
+  lines: { sku: string; gudang: string; quantity: number }[],
+) {
+  assertSheetConfig();
+  const allRows = await loadSystemStockFromSheet();
+  const keep = allRows.filter((r) => r.sessionId !== sessionId);
+
+  const aggregated = aggregateSystemStockRows(
+    lines.map((line, index) => ({
+      rowIndex: index,
+      sessionId,
+      sku: line.sku,
+      gudang: line.gudang,
+      quantity: line.quantity,
+    })),
+  );
+
+  const header = ["session_id", "sku", "gudang", "quantity"];
+  const newSessionRows = aggregated.map((row) => [
+    sessionId,
+    row.sku,
+    row.gudang,
+    String(row.quantity),
+  ]);
+  const keptRows = keep.map((row) => [
+    row.sessionId,
+    row.sku,
+    row.gudang,
+    String(row.quantity),
+  ]);
+  const values = [header, ...keptRows, ...newSessionRows];
+
+  await getSheets().spreadsheets.values.clear({
+    spreadsheetId: sheetConfig.spreadsheetId,
+    range: tabRange(sheetConfig.systemStock, "D"),
+  });
+  await getSheets().spreadsheets.values.update({
+    spreadsheetId: sheetConfig.spreadsheetId,
+    range: `'${sheetConfig.systemStock.replace(/'/g, "''")}'!A1`,
+    valueInputOption: "USER_ENTERED",
+    requestBody: { values },
+  });
+}
+
 export async function fetchDashboard(
   sessionId: string,
   bootstrap?: BootstrapData,
@@ -368,6 +494,16 @@ export async function fetchDashboard(
     .map(([name, lines]) => ({ name, lines }));
   const stockGap = await getSessionStockGap(sessionId);
 
+  const { totals: countedBySkuGudang, unmappedLocations } =
+    aggregateCountsBySkuGudang(sessionCounts, data.locationMap);
+
+  const systemRows = await readSystemStockForSession(sessionId);
+  const systemStockBySkuGudang = aggregateSystemStockRows(systemRows);
+  const variances = computeSkuGudangVariances(
+    countedBySkuGudang,
+    systemStockBySkuGudang,
+  );
+
   return {
     sessionId,
     sessionName: session?.name ?? sessionId,
@@ -391,5 +527,9 @@ export async function fetchDashboard(
     totalGapQty: stockGap.totalGapQty,
     sessionStockSheetTitle: stockGap.sheetTitle,
     stockGapPreview: stockGap.preview,
+    countedBySkuGudang,
+    systemStockBySkuGudang,
+    variances,
+    unmappedLocations,
   };
 }

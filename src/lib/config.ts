@@ -5,8 +5,10 @@ export const sheetConfig = {
   locations: process.env.SHEET_LOCATIONS ?? "Locations",
   skus: process.env.SHEET_SKUS ?? "SKUs",
   counts: process.env.SHEET_COUNTS ?? "Counts",
+  assignments: process.env.SHEET_ASSIGNMENTS ?? "Assignments",
   opnamePrefix: process.env.SHEET_OPNAME_PREFIX ?? "SO_",
   locationMap: process.env.SHEET_LOCATION_MAP ?? "LocationMap",
+  systemStock: process.env.SHEET_SYSTEM_STOCK ?? "SystemStock",
 } as const;
 
 /** 1-based column letters → index helpers are in sheets.ts */
@@ -27,6 +29,22 @@ export const columnMaps = {
     sku: Number(process.env.COL_SKU_CODE ?? 0),
     name: Number(process.env.COL_SKU_NAME ?? 1),
     code: Number(process.env.COL_SKU_BARCODE ?? 2),
+  },
+  assignments: {
+    sessionId: Number(process.env.COL_ASSIGNMENT_SESSION_ID ?? 0),
+    location: Number(process.env.COL_ASSIGNMENT_LOCATION ?? 1),
+    name: Number(process.env.COL_ASSIGNMENT_NAME ?? 2),
+    sku: Number(process.env.COL_ASSIGNMENT_SKU ?? 3),
+  },
+  locationMap: {
+    location: Number(process.env.COL_LOCATION_MAP_LOCATION ?? 0),
+    gudang: Number(process.env.COL_LOCATION_MAP_GUDANG ?? 1),
+  },
+  systemStock: {
+    sessionId: Number(process.env.COL_SYSTEM_STOCK_SESSION_ID ?? 0),
+    sku: Number(process.env.COL_SYSTEM_STOCK_SKU ?? 1),
+    gudang: Number(process.env.COL_SYSTEM_STOCK_GUDANG ?? 2),
+    quantity: Number(process.env.COL_SYSTEM_STOCK_QTY ?? 3),
   },
   counts: [
     "timestamp",

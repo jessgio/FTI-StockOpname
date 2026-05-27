@@ -1,18 +1,28 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { AssignmentTaskList } from "@/components/AssignmentTaskList";
 import { ScanField } from "@/components/ScanField";
 import { SkuScanField } from "@/components/SkuScanField";
 import { CountHistory } from "@/components/CountHistory";
 import { Button, Card, ErrorBanner, SuccessBanner } from "@/components/ui";
 import { apiFetch } from "@/lib/count-api";
 import { getDeviceId } from "@/lib/device";
-import { resolveLocation } from "@/lib/match";
+import {
+  buildStaffLocationTasks,
+  getAllowedLocations,
+  getRequiredSkusForLocation,
+  getStaffAssignments,
+  locationAssignmentError,
+  sessionAssignmentsEnforced,
+} from "@/lib/assignments";
+import { resolveGudang } from "@/lib/location-map";
+import { resolveLocation, resolveSku } from "@/lib/match";
 import {
   clearActiveLocation,
   saveActiveLocation,
 } from "@/lib/session-store";
-import type { BootstrapData, DeviceSession } from "@/lib/types";
+import type { BootstrapData, CountEntry, DeviceSession } from "@/lib/types";
 
 export function CountWorkspace({
   deviceSession,
@@ -35,16 +45,142 @@ export function CountWorkspace({
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [historyKey, setHistoryKey] = useState(0);
+  const [myCounts, setMyCounts] = useState<CountEntry[]>([]);
 
-  function confirmLocation(scannedName?: string) {
-    const name = (scannedName ?? locationInput).trim();
-    if (!name) {
-      setError("Scan or enter a location first.");
+  const allowedLocations = useMemo(
+    () =>
+      getAllowedLocations(
+        deviceSession.sessionId,
+        deviceSession.counterName,
+        bootstrap.assignments,
+        bootstrap.locations,
+      ),
+    [
+      deviceSession.sessionId,
+      deviceSession.counterName,
+      bootstrap.assignments,
+      bootstrap.locations,
+    ],
+  );
+
+  const assignmentsActive = sessionAssignmentsEnforced(
+    deviceSession.sessionId,
+    bootstrap.assignments,
+  );
+  const hasAssignedLocations =
+    getStaffAssignments(
+      deviceSession.sessionId,
+      deviceSession.counterName,
+      bootstrap.assignments,
+    ).length > 0;
+
+  const locationTasks = useMemo(
+    () =>
+      buildStaffLocationTasks(
+        deviceSession.sessionId,
+        deviceSession.counterName,
+        bootstrap.assignments,
+        myCounts,
+        bootstrap.skus,
+      ),
+    [
+      deviceSession.sessionId,
+      deviceSession.counterName,
+      bootstrap.assignments,
+      myCounts,
+    ],
+  );
+
+  const requiredSkusAtActive = useMemo(() => {
+    if (!activeLocation) return null;
+    return getRequiredSkusForLocation(
+      deviceSession.sessionId,
+      deviceSession.counterName,
+      activeLocation,
+      bootstrap.assignments,
+    );
+  }, [
+    activeLocation,
+    deviceSession.sessionId,
+    deviceSession.counterName,
+    bootstrap.assignments,
+  ]);
+
+  const skusForScan = useMemo(() => {
+    if (!requiredSkusAtActive?.length) return bootstrap.skus;
+    const allowed = new Set(
+      requiredSkusAtActive.map((s) => s.trim().toLowerCase()),
+    );
+    return bootstrap.skus.filter(
+      (s) =>
+        allowed.has(s.sku.toLowerCase()) ||
+        allowed.has(s.name.toLowerCase()) ||
+        allowed.has(s.code.toLowerCase()),
+    );
+  }, [bootstrap.skus, requiredSkusAtActive]);
+
+  const loadMyCounts = useCallback(async () => {
+    try {
+      const res = await apiFetch(
+        `/api/history?sessionId=${encodeURIComponent(deviceSession.sessionId)}&counter=${encodeURIComponent(deviceSession.counterName)}`,
+      );
+      const data = await res.json();
+      if (!res.ok) return;
+      setMyCounts((data.history ?? []) as CountEntry[]);
+    } catch {
+      setMyCounts([]);
+    }
+  }, [deviceSession.sessionId, deviceSession.counterName]);
+
+  useEffect(() => {
+    void loadMyCounts();
+  }, [loadMyCounts, historyKey]);
+
+  useEffect(() => {
+    if (!activeLocation || !assignmentsActive) return;
+    if (!resolveLocation(activeLocation, allowedLocations)) {
+      clearActiveLocation();
+      onLocationChange(null);
+      setPickingLocation(true);
+      setError(
+        hasAssignedLocations
+          ? "Your previous location is no longer assigned to you."
+          : locationAssignmentError(
+              deviceSession.sessionId,
+              deviceSession.counterName,
+              bootstrap.assignments,
+            ),
+      );
+    }
+  }, [
+    activeLocation,
+    allowedLocations,
+    assignmentsActive,
+    hasAssignedLocations,
+    deviceSession.sessionId,
+    deviceSession.counterName,
+    bootstrap.assignments,
+    onLocationChange,
+  ]);
+
+  function lockLocation(name: string) {
+    if (assignmentsActive && !hasAssignedLocations) {
+      setError(
+        locationAssignmentError(
+          deviceSession.sessionId,
+          deviceSession.counterName,
+          bootstrap.assignments,
+        ),
+      );
       return;
     }
-    const match = resolveLocation(name, bootstrap.locations);
+    const match = resolveLocation(name, allowedLocations);
     if (!match) {
-      setError("Location not found.");
+      setError(
+        assignmentsActive
+          ? "That location is not assigned to you."
+          : "Location not found.",
+      );
       return;
     }
     saveActiveLocation(match.name);
@@ -53,6 +189,15 @@ export function CountWorkspace({
     setPickingLocation(false);
     setError(null);
     setSuccess(`Location set: ${match.name}`);
+  }
+
+  function confirmLocation(scannedName?: string) {
+    const name = (scannedName ?? locationInput).trim();
+    if (!name) {
+      setError("Scan or enter a location first.");
+      return;
+    }
+    lockLocation(name);
   }
 
   function changeLocation() {
@@ -81,6 +226,23 @@ export function CountWorkspace({
       return;
     }
 
+    const resolved = resolveSku(skuInput.trim(), bootstrap.skus);
+    if (!resolved) {
+      setError("Unknown SKU.");
+      return;
+    }
+    if (requiredSkusAtActive?.length) {
+      const ok = requiredSkusAtActive.some(
+        (s) => s.toLowerCase() === resolved.sku.toLowerCase(),
+      );
+      if (!ok) {
+        setError(
+          `This location requires: ${requiredSkusAtActive.join(", ")}`,
+        );
+        return;
+      }
+    }
+
     setSubmitting(true);
     setError(null);
     setSuccess(null);
@@ -106,6 +268,7 @@ export function CountWorkspace({
       setQuantityInput("");
       setHistoryKey((k) => k + 1);
       onHistoryChange();
+      await loadMyCounts();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to save");
     } finally {
@@ -113,27 +276,50 @@ export function CountWorkspace({
     }
   }
 
-  const locationDisplay = activeLocation;
+  const activeGudang = activeLocation
+    ? resolveGudang(activeLocation, bootstrap.locationMap)
+    : undefined;
+
+  const showTaskList = assignmentsActive && locationTasks.length > 0;
 
   return (
     <div className="space-y-4">
+      {showTaskList ? (
+        <Card className="!bg-stone-50/80">
+          <AssignmentTaskList
+            tasks={locationTasks}
+            skus={bootstrap.skus}
+            activeLocation={activeLocation}
+            selectable={pickingLocation || !activeLocation}
+            onSelectLocation={(loc) => lockLocation(loc)}
+          />
+        </Card>
+      ) : null}
+
       {pickingLocation || !activeLocation ? (
         <Card>
+          {assignmentsActive && hasAssignedLocations ? (
+            <p className="mb-3 text-sm text-stone-600">
+              Tap one of your locations above, or scan its QR code below.
+            </p>
+          ) : null}
           <ScanField
             label="Set location"
             placeholder="Scan or type location name"
             value={locationInput}
             onChange={setLocationInput}
             onSubmit={(value) => confirmLocation(value)}
-            autoFocus
+            autoFocus={!showTaskList}
           />
-          <Button
-            type="button"
-            className="mt-3"
-            onClick={() => confirmLocation()}
-          >
-            Lock location
-          </Button>
+          {!showTaskList ? (
+            <Button
+              type="button"
+              className="mt-3"
+              onClick={() => confirmLocation()}
+            >
+              Lock location
+            </Button>
+          ) : null}
         </Card>
       ) : (
         <>
@@ -142,8 +328,22 @@ export function CountWorkspace({
               Active location
             </p>
             <p className="text-xl font-semibold text-teal-950">
-              {locationDisplay}
+              {activeLocation}
             </p>
+            {activeGudang ? (
+              <p className="mt-1 text-sm text-teal-800">
+                Counts roll up to <strong>{activeGudang}</strong>
+              </p>
+            ) : bootstrap.locationMap.length > 0 ? (
+              <p className="mt-1 text-sm text-amber-800">
+                No gudang mapped for this location — ask your supervisor.
+              </p>
+            ) : null}
+            {requiredSkusAtActive?.length ? (
+              <p className="mt-1 text-sm text-stone-600">
+                Required SKUs: {requiredSkusAtActive.join(", ")}
+              </p>
+            ) : null}
             <Button
               type="button"
               variant="ghost"
@@ -156,7 +356,7 @@ export function CountWorkspace({
 
           <Card className="space-y-4">
             <SkuScanField
-              skus={bootstrap.skus}
+              skus={skusForScan}
               value={skuInput}
               onChange={setSkuInput}
               autoFocus
@@ -195,6 +395,10 @@ export function CountWorkspace({
         deviceSession={deviceSession}
         bootstrap={bootstrap}
         refreshKey={historyKey}
+        onCountsChange={() => {
+          setHistoryKey((k) => k + 1);
+          void loadMyCounts();
+        }}
       />
     </div>
   );

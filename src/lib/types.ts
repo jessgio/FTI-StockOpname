@@ -15,6 +15,45 @@ export interface Location {
   name: string;
 }
 
+/** LocationMap tab: physical scan location → warehouse (gudang). */
+export interface LocationGudangMap {
+  location: string;
+  gudang: string;
+}
+
+export interface SkuGudangTotal {
+  sku: string;
+  gudang: string;
+  quantity: number;
+}
+
+export interface SkuGudangVariance {
+  sku: string;
+  gudang: string;
+  counted: number;
+  system: number;
+  variance: number;
+}
+
+export interface SystemStockRow {
+  rowIndex: number;
+  sessionId: string;
+  sku: string;
+  gudang: string;
+  quantity: number;
+}
+
+/**
+ * One row on the Assignments sheet (session_id, location, name, optional sku).
+ * Multiple rows per location with different skus = multiple SKUs to count there.
+ */
+export interface CounterLocationAssignment {
+  sessionId: string;
+  location: string;
+  name: string;
+  sku: string;
+}
+
 export interface Sku {
   sku: string;
   name: string;
@@ -38,6 +77,8 @@ export interface BootstrapData {
   counters: Counter[];
   locations: Location[];
   skus: Sku[];
+  assignments: CounterLocationAssignment[];
+  locationMap: LocationGudangMap[];
 }
 
 export interface DashboardMetrics {
@@ -63,6 +104,11 @@ export interface DashboardMetrics {
   totalGapQty: number;
   sessionStockSheetTitle: string | null;
   stockGapPreview: StockGapRow[];
+  /** Physical counts rolled up via LocationMap. */
+  countedBySkuGudang: SkuGudangTotal[];
+  systemStockBySkuGudang: SkuGudangTotal[];
+  variances: SkuGudangVariance[];
+  unmappedLocations: string[];
 }
 
 export interface DeviceSession {

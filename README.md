@@ -7,7 +7,8 @@ Lightweight stock counting app for **From This Island**, using Google Sheets as 
 - **Per-device sessions** — pick a stock count session, identify yourself via counter QR, then count.
 - **Scan or type** — QR scanner for counter, location, and SKU; manual entry supported.
 - **Google Sheets backend** — indexes and counts live in your spreadsheet.
-- **Dashboard** — locations scanned, SKUs counted, totals, top locations/counters, recent lines.
+- **Dashboard** — locations scanned, SKUs counted, totals, stock gap, SKU × gudang variance, top locations/counters, recent lines.
+- **Staff assignments** — per-session locations and required SKUs with progress tracking on the count screen.
 - **Admin stock import** — upload Excel baseline by session, auto-create a `SO_<sessionId>` tab, and monitor real-time stock gap.
 
 ## Google Sheet layout
@@ -41,6 +42,44 @@ One column only. Counters type or scan their **name** (QR codes should encode th
 | Bay 2 |
 
 One column only. Scan or type the **location name** (QR codes should encode the name).
+
+### LocationMap (location → gudang)
+
+| location | gudang |
+|----------|--------|
+| Rack A1 | Gudang Utama |
+| Bay 2 | Gudang Retail |
+
+Column **A** = scan location name (same as **Locations**). Column **B** = warehouse (**gudang**) that owns stock at that location.
+
+When counters scan SKUs at a location, quantities are still stored per location on **Counts**. The dashboard rolls physical totals up to **SKU × gudang** using this map. Locations missing from LocationMap are listed on the dashboard and excluded from gudang totals.
+
+### SystemStock (system qty by SKU × gudang)
+
+| session_id | sku | gudang | quantity |
+|------------|-----|--------|----------|
+| 2026-05-full-so | FTI-001 | Gudang Utama | 120 |
+
+Create this tab before uploading. On the dashboard, upload a CSV with `sku`, `gudang`, and `quantity` columns (header row recommended). Upload replaces all system stock rows for that session. The dashboard compares aggregated physical counts (via LocationMap) to system stock and shows variance per SKU × gudang.
+
+### Assignments (staff locations and required SKUs)
+
+| session_id | location | name | sku |
+|------------|----------|------|-----|
+| 2026-05-full-so | Rack A1 | Nurul | FTI-001 |
+| 2026-05-full-so | Rack A1 | Nurul | FTI-002 |
+| 2026-05-full-so | Bay 2 | Nurul | FTI-003 |
+| 2026-05-full-so | Rack B3 | Sonny | FTI-001 |
+
+- **session_id** (A), **location** (B), **name** (C) — same values as **Sessions**, **Locations**, and **Counters**.
+- **sku** (D) — optional. One row per SKU required at that location. Multiple SKUs at one location = multiple rows (same session, location, name).
+
+**How it works:**
+
+- If **Assignments** is empty, any counter can use any location and any SKU (backward compatible).
+- If a session has assignment rows, staff only see and can lock **their** locations; other locations are rejected.
+- After they enter their name, their location list appears (gray until complete, **green** when every required SKU at that location has a saved count).
+- If column D is blank for a location, any SKU is allowed there; the location turns green after the first saved count.
 
 ### SKUs
 
@@ -77,17 +116,7 @@ Generated from Admin import (`/admin/opname`) using the uploaded Excel file:
 
 This sheet is refreshed automatically every time a count is added, edited, or deleted.
 
-### Location map sheet (`LocationMap`)
-
-Used to map scanned count locations to target warehouse (`gudang`) names:
-
-| location | gudang |
-|----------|--------|
-| B-13-INV | Gudang Finished Goods |
-| A-01-RM | Gudang Raw Material |
-
-- Counts are aggregated into the session stock sheet only when a `location` has a mapping.
-- Unmapped count locations are ignored (no new baseline rows are created).
+Counts are aggregated into the session stock sheet only when a `location` has a **LocationMap** entry. Unmapped count locations are ignored for opname gap totals (and listed on the dashboard).
 
 ## Google Cloud setup
 

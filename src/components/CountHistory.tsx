@@ -15,10 +15,12 @@ export function CountHistory({
   deviceSession,
   bootstrap,
   refreshKey,
+  onCountsChange,
 }: {
   deviceSession: DeviceSession;
   bootstrap: BootstrapData;
   refreshKey: number;
+  onCountsChange?: () => void;
 }) {
   const [history, setHistory] = useState<CountEntry[]>([]);
   const [loading, setLoading] = useState(true);
@@ -91,6 +93,7 @@ export function CountHistory({
       setEditingId(null);
       setDraft(null);
       await loadHistory();
+      onCountsChange?.();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to update");
     } finally {
@@ -125,6 +128,7 @@ export function CountHistory({
         setDraft(null);
       }
       await loadHistory();
+      onCountsChange?.();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to delete");
     } finally {

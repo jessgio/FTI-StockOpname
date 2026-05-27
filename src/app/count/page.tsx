@@ -11,6 +11,11 @@ import {
   NavLink,
   SuccessBanner,
 } from "@/components/ui";
+import { AssignmentTaskList } from "@/components/AssignmentTaskList";
+import {
+  buildStaffLocationTasks,
+  sessionAssignmentsEnforced,
+} from "@/lib/assignments";
 import { resolveCounter } from "@/lib/match";
 import {
   clearDeviceSession,
@@ -77,6 +82,33 @@ export default function CountPage() {
 
   const openSessions =
     bootstrap?.sessions.filter((s) => s.status !== "closed") ?? [];
+
+  const counterPreview = bootstrap
+    ? resolveCounter(counterInput.trim(), bootstrap.counters)
+    : undefined;
+
+  const previewTasks =
+    bootstrap && selectedSession && counterPreview
+      ? buildStaffLocationTasks(
+          selectedSession.id,
+          counterPreview.name,
+          bootstrap.assignments,
+          [],
+          bootstrap.skus,
+        )
+      : [];
+
+  const showAssignmentPreview =
+    Boolean(
+      bootstrap &&
+        selectedSession &&
+        counterPreview &&
+        sessionAssignmentsEnforced(
+          selectedSession.id,
+          bootstrap.assignments,
+        ) &&
+        previewTasks.length > 0,
+    );
 
   async function unlockSession(session: StockSession, pin: string) {
     setVerifyingPin(true);
@@ -265,7 +297,7 @@ export default function CountPage() {
       ) : null}
 
       {step === "counter" && !deviceSession ? (
-        <Card>
+        <Card className="space-y-4">
           <ScanField
             label="Your name"
             placeholder="Scan or type your name"
@@ -274,7 +306,17 @@ export default function CountPage() {
             onSubmit={(value) => confirmCounter(value)}
             autoFocus
           />
-          <div className="mt-3 grid gap-2">
+          {showAssignmentPreview ? (
+            <AssignmentTaskList
+              tasks={previewTasks}
+              skus={bootstrap!.skus}
+            />
+          ) : counterInput.trim() && !counterPreview ? (
+            <p className="text-sm text-amber-800">
+              Name not found. Check spelling or the Counters tab.
+            </p>
+          ) : null}
+          <div className="grid gap-2">
             <Button
               type="button"
               variant="secondary"

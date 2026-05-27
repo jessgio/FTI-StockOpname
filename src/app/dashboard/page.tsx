@@ -33,6 +33,8 @@ export default function DashboardPage() {
   const [metrics, setMetrics] = useState<DashboardMetrics | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [uploadingStock, setUploadingStock] = useState(false);
+  const [uploadSuccess, setUploadSuccess] = useState<string | null>(null);
 
   const loadBootstrap = useCallback(async () => {
     const res = await fetch("/api/bootstrap");
@@ -146,6 +148,32 @@ export default function DashboardPage() {
     setMetrics(null);
     setStep(selectedSession?.pinRequired ? "pin" : "session");
     setPinInput("");
+  }
+
+  async function uploadSystemStock(file: File) {
+    if (!sessionId) return;
+    setUploadingStock(true);
+    setError(null);
+    setUploadSuccess(null);
+    try {
+      const form = new FormData();
+      form.set("sessionId", sessionId);
+      form.set("file", file);
+      const res = await apiFetch("/api/system-stock", {
+        method: "POST",
+        body: form,
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Upload failed");
+      setUploadSuccess(
+        `Imported ${data.rowsImported} rows (${data.skuGudangPairs} SKU × gudang pairs).`,
+      );
+      await loadMetrics(sessionId);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Upload failed");
+    } finally {
+      setUploadingStock(false);
+    }
   }
 
   const sessions = bootstrap?.sessions ?? [];
@@ -396,6 +424,102 @@ export default function DashboardPage() {
                   </li>
                 ))}
               </ul>
+            )}
+          </Card>
+
+          {metrics.unmappedLocations.length > 0 ? (
+            <Card className="border-amber-200 bg-amber-50">
+              <h3 className="mb-2 font-medium text-amber-950">
+                Locations without gudang mapping
+              </h3>
+              <p className="mb-2 text-sm text-amber-900">
+                Counts at these locations are excluded from SKU × gudang totals.
+                Add them to the <strong>LocationMap</strong> tab (column A =
+                location, B = gudang).
+              </p>
+              <p className="text-sm text-amber-950">
+                {metrics.unmappedLocations.join(", ")}
+              </p>
+            </Card>
+          ) : null}
+
+          <Card className="space-y-3">
+            <h3 className="font-medium">System stock (SKU × gudang)</h3>
+            <p className="text-sm text-stone-600">
+              Upload a CSV with <strong>sku</strong>, <strong>gudang</strong>,
+              and <strong>quantity</strong> columns. Physical counts are rolled
+              up to gudang using the LocationMap tab.
+            </p>
+            <input
+              type="file"
+              accept=".csv,text/csv"
+              className="block w-full text-sm"
+              disabled={uploadingStock}
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (file) void uploadSystemStock(file);
+                e.target.value = "";
+              }}
+            />
+            {uploadingStock ? (
+              <p className="text-sm text-stone-600">Uploading…</p>
+            ) : null}
+            {uploadSuccess ? (
+              <p className="text-sm text-teal-800">{uploadSuccess}</p>
+            ) : null}
+          </Card>
+
+          <Card>
+            <h3 className="mb-2 font-medium">Variance by SKU × gudang</h3>
+            {metrics.systemStockBySkuGudang.length === 0 ? (
+              <p className="text-sm text-stone-600">
+                Upload system stock to compare against counted totals.
+              </p>
+            ) : metrics.variances.length === 0 ? (
+              <p className="text-sm text-stone-600">No rows to compare yet.</p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-sm">
+                  <thead>
+                    <tr className="border-b border-stone-200 text-stone-600">
+                      <th className="py-2 pr-2">SKU</th>
+                      <th className="py-2 pr-2">Gudang</th>
+                      <th className="py-2 pr-2 text-right">Counted</th>
+                      <th className="py-2 pr-2 text-right">System</th>
+                      <th className="py-2 text-right">Var</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {metrics.variances.map((row) => (
+                      <tr
+                        key={`${row.sku}-${row.gudang}`}
+                        className="border-b border-stone-100"
+                      >
+                        <td className="py-2 pr-2 font-medium">{row.sku}</td>
+                        <td className="py-2 pr-2">{row.gudang}</td>
+                        <td className="py-2 pr-2 text-right tabular-nums">
+                          {row.counted}
+                        </td>
+                        <td className="py-2 pr-2 text-right tabular-nums">
+                          {row.system}
+                        </td>
+                        <td
+                          className={`py-2 text-right tabular-nums ${
+                            row.variance === 0
+                              ? "text-stone-600"
+                              : row.variance > 0
+                                ? "text-teal-800"
+                                : "text-red-700"
+                          }`}
+                        >
+                          {row.variance > 0 ? "+" : ""}
+                          {row.variance}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             )}
           </Card>
 
