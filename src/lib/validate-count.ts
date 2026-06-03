@@ -85,6 +85,7 @@ export async function validateCountInput(
         location.name,
         bootstrap.assignments,
         bootstrap.locationMap,
+        bootstrap.skus,
       ),
     );
   }

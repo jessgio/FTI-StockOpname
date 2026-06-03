@@ -1,5 +1,6 @@
 import { getRequiredSkusFromLocationMap } from "./location-map";
 import { resolveSku } from "./match";
+import { formatSkuDisplayName } from "./sku-list";
 import type {
   CountEntry,
   CounterLocationAssignment,
@@ -164,6 +165,7 @@ export function skuAssignmentError(
   locationName: string,
   assignments: CounterLocationAssignment[],
   locationMap: LocationGudangMap[] = [],
+  catalog: Sku[] = [],
 ): string {
   const required = getRequiredSkusForLocation(
     sessionId,
@@ -173,7 +175,8 @@ export function skuAssignmentError(
     locationMap,
   );
   if (!required?.length) return "This SKU is not valid here.";
-  return `Only these SKUs are required here: ${required.join(", ")}`;
+  const labels = required.map((code) => formatSkuDisplayName(code, catalog));
+  return `Only these products are required here: ${labels.join(", ")}`;
 }
 
 function countCoversSku(

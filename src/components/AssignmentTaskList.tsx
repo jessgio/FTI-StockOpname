@@ -1,16 +1,8 @@
 "use client";
 
 import type { LocationTaskStatus } from "@/lib/assignments";
+import { formatSkuDisplayName } from "@/lib/sku-list";
 import type { Sku } from "@/lib/types";
-
-function skuLabel(sku: string, skus: Sku[]): string {
-  const item = skus.find(
-    (s) =>
-      s.sku.toLowerCase() === sku.toLowerCase() ||
-      s.name.toLowerCase() === sku.toLowerCase(),
-  );
-  return item?.name ? `${sku} · ${item.name}` : sku;
-}
 
 export function AssignmentTaskList({
   tasks,
@@ -64,7 +56,7 @@ export function AssignmentTaskList({
                       }
                     >
                       {row.done ? "✓ " : "○ "}
-                      {skuLabel(row.sku, skus)}
+                      {formatSkuDisplayName(row.sku, skus)}
                     </li>
                   ))}
                 </ul>

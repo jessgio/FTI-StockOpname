@@ -1,6 +1,15 @@
 import { normalizeCode, resolveSku } from "./match";
 import type { Sku } from "./types";
 
+/** Product name for UI; falls back to the code if not in the SKUs tab. */
+export function formatSkuDisplayName(code: string, catalog: Sku[]): string {
+  const trimmed = code.trim();
+  if (!trimmed) return trimmed;
+  const match = resolveSku(trimmed, catalog);
+  if (match?.name.trim()) return match.name.trim();
+  return trimmed;
+}
+
 /** SKUs available for scanning at a location (LocationMap column C + catalog). */
 export function buildSkusForScan(
   catalog: Sku[],

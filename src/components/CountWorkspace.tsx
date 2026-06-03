@@ -20,7 +20,7 @@ import {
 } from "@/lib/assignments";
 import { resolveGudang } from "@/lib/location-map";
 import { resolveLocation, resolveSku } from "@/lib/match";
-import { buildSkusForScan } from "@/lib/sku-list";
+import { buildSkusForScan, formatSkuDisplayName } from "@/lib/sku-list";
 import {
   clearActiveLocation,
   saveActiveLocation,
@@ -118,6 +118,13 @@ export function CountWorkspace({
     () => buildSkusForScan(bootstrap.skus, requiredSkusAtActive),
     [bootstrap.skus, requiredSkusAtActive],
   );
+
+  const requiredSkuLabels = useMemo(() => {
+    if (!requiredSkusAtActive?.length) return null;
+    return requiredSkusAtActive
+      .map((code) => formatSkuDisplayName(code, bootstrap.skus))
+      .join(", ");
+  }, [requiredSkusAtActive, bootstrap.skus]);
 
   const loadMyCounts = useCallback(async () => {
     try {
@@ -246,6 +253,7 @@ export function CountWorkspace({
             activeLocation,
             bootstrap.assignments,
             bootstrap.locationMap,
+            bootstrap.skus,
           ),
         );
         return;
@@ -354,9 +362,9 @@ export function CountWorkspace({
                 No gudang mapped for this location — ask your supervisor.
               </p>
             ) : null}
-            {requiredSkusAtActive?.length ? (
+            {requiredSkuLabels ? (
               <p className="mt-1 text-sm text-stone-600">
-                Required SKUs: {requiredSkusAtActive.join(", ")}
+                Required: {requiredSkuLabels}
               </p>
             ) : null}
             <Button

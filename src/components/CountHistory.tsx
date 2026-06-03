@@ -13,7 +13,7 @@ import {
   skuAssignmentError,
 } from "@/lib/assignments";
 import { resolveLocation, resolveSku } from "@/lib/match";
-import { buildSkusForScan } from "@/lib/sku-list";
+import { buildSkusForScan, formatSkuDisplayName } from "@/lib/sku-list";
 import { Button, Card } from "./ui";
 import type { BootstrapData, CountEntry, DeviceSession } from "@/lib/types";
 
@@ -152,6 +152,7 @@ export function CountHistory({
           location.name,
           bootstrap.assignments,
           bootstrap.locationMap,
+          bootstrap.skus,
         );
       }
     } else {
@@ -238,10 +239,7 @@ export function CountHistory({
   }
 
   function skuLabel(sku: string) {
-    const item = bootstrap.skus.find(
-      (s) => s.sku === sku || s.name.toLowerCase() === sku.toLowerCase(),
-    );
-    return item?.name ?? sku;
+    return formatSkuDisplayName(sku, bootstrap.skus);
   }
 
   return (
