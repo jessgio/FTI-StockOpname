@@ -1,7 +1,7 @@
 import { normalizeCode, resolveSku } from "./match";
 import type { Sku } from "./types";
 
-/** SKUs available for scanning at a location (assignment codes + catalog). */
+/** SKUs available for scanning at a location (LocationMap column C + catalog). */
 export function buildSkusForScan(
   catalog: Sku[],
   requiredCodes: string[] | null,

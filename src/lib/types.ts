@@ -15,10 +15,11 @@ export interface Location {
   name: string;
 }
 
-/** LocationMap tab: physical scan location → warehouse (gudang). */
+/** LocationMap tab: location registry, gudang rollup, optional required SKU. */
 export interface LocationGudangMap {
   location: string;
   gudang: string;
+  sku: string;
 }
 
 export interface SkuGudangTotal {
@@ -44,8 +45,8 @@ export interface SystemStockRow {
 }
 
 /**
- * One row on the Assignments sheet (session_id, location, name, optional sku).
- * Multiple rows per location with different skus = multiple SKUs to count there.
+ * One row on the Assignments sheet (session_id, location, name).
+ * Optional sku on the row is legacy — prefer LocationMap column C.
  */
 export interface CounterLocationAssignment {
   sessionId: string;

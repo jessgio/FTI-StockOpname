@@ -69,12 +69,14 @@ export function CountHistory({
       deviceSession.counterName,
       draft.location.trim(),
       bootstrap.assignments,
+      bootstrap.locationMap,
     );
   }, [
     draft?.location,
     deviceSession.sessionId,
     deviceSession.counterName,
     bootstrap.assignments,
+    bootstrap.locationMap,
   ]);
 
   const editSkusForScan = useMemo(
@@ -141,6 +143,7 @@ export function CountHistory({
           skuTrimmed,
           bootstrap.assignments,
           bootstrap.skus,
+          bootstrap.locationMap,
         )
       ) {
         return skuAssignmentError(
@@ -148,6 +151,7 @@ export function CountHistory({
           deviceSession.counterName,
           location.name,
           bootstrap.assignments,
+          bootstrap.locationMap,
         );
       }
     } else {

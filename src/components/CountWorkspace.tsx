@@ -85,12 +85,15 @@ export function CountWorkspace({
         bootstrap.assignments,
         myCounts,
         bootstrap.skus,
+        bootstrap.locationMap,
       ),
     [
       deviceSession.sessionId,
       deviceSession.counterName,
       bootstrap.assignments,
+      bootstrap.locationMap,
       myCounts,
+      bootstrap.skus,
     ],
   );
 
@@ -101,12 +104,14 @@ export function CountWorkspace({
       deviceSession.counterName,
       activeLocation,
       bootstrap.assignments,
+      bootstrap.locationMap,
     );
   }, [
     activeLocation,
     deviceSession.sessionId,
     deviceSession.counterName,
     bootstrap.assignments,
+    bootstrap.locationMap,
   ]);
 
   const skusForScan = useMemo(
@@ -231,6 +236,7 @@ export function CountWorkspace({
         skuTrimmed,
         bootstrap.assignments,
         bootstrap.skus,
+        bootstrap.locationMap,
       );
       if (!allowed) {
         setError(
@@ -239,6 +245,7 @@ export function CountWorkspace({
             deviceSession.counterName,
             activeLocation,
             bootstrap.assignments,
+            bootstrap.locationMap,
           ),
         );
         return;

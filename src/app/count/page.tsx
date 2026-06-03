@@ -95,6 +95,7 @@ export default function CountPage() {
           bootstrap.assignments,
           [],
           bootstrap.skus,
+          bootstrap.locationMap,
         )
       : [];
 

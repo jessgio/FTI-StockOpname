@@ -39,6 +39,7 @@ export const columnMaps = {
   locationMap: {
     location: Number(process.env.COL_LOCATION_MAP_LOCATION ?? 0),
     gudang: Number(process.env.COL_LOCATION_MAP_GUDANG ?? 1),
+    sku: Number(process.env.COL_LOCATION_MAP_SKU ?? 2),
   },
   systemStock: {
     sessionId: Number(process.env.COL_SYSTEM_STOCK_SESSION_ID ?? 0),

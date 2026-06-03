@@ -1,5 +1,12 @@
+import { getRequiredSkusFromLocationMap } from "./location-map";
 import { resolveSku } from "./match";
-import type { CountEntry, CounterLocationAssignment, Location, Sku } from "./types";
+import type {
+  CountEntry,
+  CounterLocationAssignment,
+  Location,
+  LocationGudangMap,
+  Sku,
+} from "./types";
 
 function norm(value: string): string {
   return value.trim().toLowerCase();
@@ -76,16 +83,24 @@ export function getRequiredSkusForLocation(
   staffName: string,
   locationName: string,
   assignments: CounterLocationAssignment[],
+  locationMap: LocationGudangMap[] = [],
 ): string[] | null {
   const rows = getStaffAssignments(sessionId, staffName, assignments).filter(
     (a) => norm(a.location) === norm(locationName),
   );
   if (rows.length === 0) return null;
-  const skus = [
+
+  const fromLocationMap = getRequiredSkusFromLocationMap(
+    locationName,
+    locationMap,
+  );
+  if (fromLocationMap.length > 0) return fromLocationMap;
+
+  const legacySkus = [
     ...new Set(rows.map((r) => r.sku.trim()).filter(Boolean)),
   ];
-  if (skus.length === 0) return null;
-  return skus;
+  if (legacySkus.length === 0) return null;
+  return legacySkus;
 }
 
 export function isLocationAllowedForCounter(
@@ -116,12 +131,14 @@ export function isSkuAllowedAtLocation(
   skuCode: string,
   assignments: CounterLocationAssignment[],
   catalog: Sku[] = [],
+  locationMap: LocationGudangMap[] = [],
 ): boolean {
   const required = getRequiredSkusForLocation(
     sessionId,
     staffName,
     locationName,
     assignments,
+    locationMap,
   );
   if (!required) return true;
   return required.some((req) => skuCodesMatch(req, skuCode, catalog));
@@ -146,12 +163,14 @@ export function skuAssignmentError(
   staffName: string,
   locationName: string,
   assignments: CounterLocationAssignment[],
+  locationMap: LocationGudangMap[] = [],
 ): string {
   const required = getRequiredSkusForLocation(
     sessionId,
     staffName,
     locationName,
     assignments,
+    locationMap,
   );
   if (!required?.length) return "This SKU is not valid here.";
   return `Only these SKUs are required here: ${required.join(", ")}`;
@@ -180,21 +199,14 @@ export function buildStaffLocationTasks(
   assignments: CounterLocationAssignment[],
   counts: CountEntry[],
   catalog: Sku[] = [],
+  locationMap: LocationGudangMap[] = [],
 ): LocationTaskStatus[] {
   const mine = getStaffAssignments(sessionId, staffName, assignments);
   if (mine.length === 0) return [];
 
-  const byLocation = new Map<string, Set<string>>();
-  for (const row of mine) {
-    const loc = row.location.trim();
-    if (!loc) continue;
-    let skus = byLocation.get(loc);
-    if (!skus) {
-      skus = new Set();
-      byLocation.set(loc, skus);
-    }
-    if (row.sku.trim()) skus.add(row.sku.trim());
-  }
+  const locations = [
+    ...new Set(mine.map((row) => row.location.trim()).filter(Boolean)),
+  ];
 
   const sessionCounts = counts.filter(
     (c) =>
@@ -202,9 +214,15 @@ export function buildStaffLocationTasks(
   );
 
   const tasks: LocationTaskStatus[] = [];
-  for (const [location, skuSet] of byLocation) {
-    const requiredSkus = [...skuSet];
-    if (requiredSkus.length === 0) {
+  for (const location of locations) {
+    const requiredSkus = getRequiredSkusForLocation(
+      sessionId,
+      staffName,
+      location,
+      assignments,
+      locationMap,
+    );
+    if (!requiredSkus?.length) {
       const visited = sessionCounts.some(
         (c) => norm(c.location) === norm(location),
       );

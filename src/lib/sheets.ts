@@ -11,6 +11,7 @@ import {
   computeSkuGudangVariances,
 } from "./aggregate";
 import { isSameCounter } from "./counter-auth";
+import { mergeLocationLists } from "./location-map";
 import { normalizeCode } from "./match";
 import { pinsMatch } from "./pin-auth";
 import { getSessionStockGap, refreshSessionStockFromCounts } from "./stock-opname";
@@ -123,7 +124,7 @@ export async function fetchBootstrap(
   ] = await Promise.all([
     readTab(sheetConfig.sessions),
     readTab(sheetConfig.counters),
-    readTab(sheetConfig.locations),
+    readTab(sheetConfig.locations).catch(() => [] as string[][]),
     readTab(sheetConfig.skus),
     readTab(sheetConfig.assignments).catch(() => [] as string[][]),
     readTab(sheetConfig.locationMap).catch(() => [] as string[][]),
@@ -149,7 +150,7 @@ export async function fetchBootstrap(
     .map((row) => ({ name: cell(row, cm.name) }))
     .filter((c) => c.name);
 
-  const locations: Location[] = locationRows
+  const locationsFromTab: Location[] = locationRows
     .map((row) => ({ name: cell(row, lm.name) }))
     .filter((l) => l.name);
 
@@ -178,8 +179,11 @@ export async function fetchBootstrap(
     .map((row) => ({
       location: cell(row, lmm.location),
       gudang: cell(row, lmm.gudang),
+      sku: cell(row, lmm.sku),
     }))
-    .filter((m) => m.location && m.gudang);
+    .filter((m) => m.location.trim());
+
+  const locations = mergeLocationLists(locationsFromTab, locationMap);
 
   const data = {
     sessions,

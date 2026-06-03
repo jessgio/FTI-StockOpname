@@ -34,25 +34,21 @@ Create tabs with a **header row** (row 1), data from row 2.
 
 One column only. Counters type or scan their **name** (QR codes should encode the name, e.g. `Nurul`).
 
-### Locations
+### LocationMap (locations, gudang, required SKUs)
 
-| name |
-|------|
-| Rack A1 |
-| Bay 2 |
+| location | gudang | sku |
+|----------|--------|-----|
+| Rack A1 | Gudang Utama | FTI-001 |
+| Rack A1 | Gudang Utama | FTI-002 |
+| Bay 2 | Gudang Retail | |
 
-One column only. Scan or type the **location name** (QR codes should encode the name).
+- **location** (A) — scan location name (master list; QR codes should encode this name).
+- **gudang** (B) — warehouse for dashboard **SKU × gudang** rollup. Repeat the same gudang on each SKU row for that location.
+- **sku** (C) — optional. One row per required SKU at that location (shared by all staff assigned there). Leave blank to allow any SKU from the **SKUs** tab.
 
-### LocationMap (location → gudang)
+The **Locations** tab is optional: if you maintain it, names are merged with column A here. You can use **LocationMap** alone.
 
-| location | gudang |
-|----------|--------|
-| Rack A1 | Gudang Utama |
-| Bay 2 | Gudang Retail |
-
-Column **A** = scan location name (same as **Locations**). Column **B** = warehouse (**gudang**) that owns stock at that location.
-
-When counters scan SKUs at a location, quantities are still stored per location on **Counts**. The dashboard rolls physical totals up to **SKU × gudang** using this map. Locations missing from LocationMap are listed on the dashboard and excluded from gudang totals.
+When counters scan SKUs at a location, quantities are stored per location on **Counts**. The dashboard rolls physical totals up to **SKU × gudang** using column B. Locations counted but missing a gudang on **LocationMap** are listed on the dashboard and excluded from gudang totals.
 
 ### SystemStock (system qty by SKU × gudang)
 
@@ -62,24 +58,26 @@ When counters scan SKUs at a location, quantities are still stored per location 
 
 Create this tab before uploading. On the dashboard, upload a CSV with `sku`, `gudang`, and `quantity` columns (header row recommended). Upload replaces all system stock rows for that session. The dashboard compares aggregated physical counts (via LocationMap) to system stock and shows variance per SKU × gudang.
 
-### Assignments (staff locations and required SKUs)
+### Assignments (staff → locations)
 
-| session_id | location | name | sku |
-|------------|----------|------|-----|
-| 2026-05-full-so | Rack A1 | Nurul | FTI-001 |
-| 2026-05-full-so | Rack A1 | Nurul | FTI-002 |
-| 2026-05-full-so | Bay 2 | Nurul | FTI-003 |
-| 2026-05-full-so | Rack B3 | Sonny | FTI-001 |
+| session_id | location | name |
+|------------|----------|------|
+| 2026-05-full-so | Rack A1 | Nurul |
+| 2026-05-full-so | Bay 2 | Nurul |
+| 2026-05-full-so | Rack B3 | Sonny |
 
-- **session_id** (A), **location** (B), **name** (C) — same values as **Sessions**, **Locations**, and **Counters**.
-- **sku** (D) — optional. One row per SKU required at that location. Multiple SKUs at one location = multiple rows (same session, location, name).
+- **session_id** (A), **location** (B), **name** (C) — same values as **Sessions**, **LocationMap** (column A), and **Counters**.
+- One row per staff member per location they may count.
+- Required SKUs per location come from **LocationMap** column C, not this tab.
 
-**How it works:**
+**How assignments work:**
 
 - If **Assignments** is empty, any counter can use any location and any SKU (backward compatible).
 - If a session has assignment rows, staff only see and can lock **their** locations; other locations are rejected.
 - After they enter their name, their location list appears (gray until complete, **green** when every required SKU at that location has a saved count).
-- If column D is blank for a location, any SKU is allowed there; the location turns green after the first saved count.
+- If **LocationMap** column C is blank for a location, any SKU is allowed there; the location turns green after the first saved count.
+
+**Legacy:** column D on **Assignments** (`sku`) still works if column C on **LocationMap** is empty for that location.
 
 ### SKUs
 

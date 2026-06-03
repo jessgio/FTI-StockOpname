@@ -1,5 +1,10 @@
 import { google, sheets_v4 } from "googleapis";
-import { assertSheetConfig, getServiceAccountCredentials, sheetConfig } from "./config";
+import {
+  assertSheetConfig,
+  columnMaps,
+  getServiceAccountCredentials,
+  sheetConfig,
+} from "./config";
 import type { CountEntry, SessionStockRow, StockGapRow } from "./types";
 
 const STOCK_HEADERS = [
@@ -52,17 +57,18 @@ function calculateVariancePct(expectedQty: number, gapQty: number): number {
 
 async function readLocationMap(): Promise<Map<string, string>> {
   assertSheetConfig();
+  const lmm = columnMaps.locationMap;
   const response = await getSheets().spreadsheets.values.get({
     spreadsheetId: sheetConfig.spreadsheetId,
-    range: tabRange(sheetConfig.locationMap, "A:B"),
+    range: tabRange(sheetConfig.locationMap, "A:Z"),
   });
   const rows = response.data.values ?? [];
   if (rows.length <= 1) return new Map();
 
   const mappings = new Map<string, string>();
   for (let i = 1; i < rows.length; i += 1) {
-    const sourceLocation = cell(rows[i], 0);
-    const gudang = cell(rows[i], 1);
+    const sourceLocation = cell(rows[i], lmm.location);
+    const gudang = cell(rows[i], lmm.gudang);
     if (!sourceLocation || !gudang) continue;
     mappings.set(sourceLocation.toLowerCase(), gudang);
   }

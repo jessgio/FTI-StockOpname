@@ -435,7 +435,7 @@ export default function DashboardPage() {
               <p className="mb-2 text-sm text-amber-900">
                 Counts at these locations are excluded from SKU × gudang totals.
                 Add them to the <strong>LocationMap</strong> tab (column A =
-                location, B = gudang).
+                location, B = gudang; column C = sku is optional).
               </p>
               <p className="text-sm text-amber-950">
                 {metrics.unmappedLocations.join(", ")}

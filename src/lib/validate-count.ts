@@ -58,6 +58,7 @@ export async function validateCountInput(
       skuCode,
       bootstrap.assignments,
       bootstrap.skus,
+      bootstrap.locationMap,
     );
     if (!allowed) throw new Error("Unknown SKU");
     sku = {
@@ -74,6 +75,7 @@ export async function validateCountInput(
       sku.sku,
       bootstrap.assignments,
       bootstrap.skus,
+      bootstrap.locationMap,
     )
   ) {
     throw new Error(
@@ -82,6 +84,7 @@ export async function validateCountInput(
         counter.name,
         location.name,
         bootstrap.assignments,
+        bootstrap.locationMap,
       ),
     );
   }
